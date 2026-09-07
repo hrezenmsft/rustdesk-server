@@ -2,6 +2,45 @@
 
 [![build](https://github.com/rustdesk/rustdesk-server/actions/workflows/build.yaml/badge.svg)](https://github.com/rustdesk/rustdesk-server/actions/workflows/build.yaml)
 
+---
+
+## 🛠️ RustDeskAdmin — Custom Admin-Presence Fork
+
+This repository is a **private fork of the official [rustdesk/rustdesk-server](https://github.com/rustdesk/rustdesk-server)**, part of the `RustDeskAdmin` project (paired with [`rustdeskadmin-client`](https://github.com/hrezenmsft/rustdeskadmin-client)). Everything below the divider is the unmodified upstream README; this section describes what is different in this fork.
+
+### What this fork adds
+
+- A new **authenticated, versioned admin API** exposed by `hbbs` on a separate port (default `21114`, override with `ADMIN_API_PORT`):
+  - `POST /admin/v1/auth/login` — exchanges a shared high-entropy admin token (stored server-side only as a bcrypt hash, `ADMIN_API_TOKEN_HASH`) for a short-lived (15-minute) JWT signed with `ADMIN_API_JWT_SECRET`.
+  - `GET /admin/v1/devices?status=online` — returns devices currently registered online with this rendezvous server (ID, optional hostname, last-seen seconds), reading only the existing in-memory peer map and reusing the server's normal 30-second registration heartbeat/timeout — **no new database, file, or log access is exposed to clients**.
+- The API is **fail-closed**: it stays disabled until `ADMIN_API_TOKEN_HASH` is configured, so an unconfigured server exposes nothing new.
+- A new `rustdesk-utils hashtoken <token>` subcommand to generate the bcrypt hash for `ADMIN_API_TOKEN_HASH` without ever needing to store the plaintext token on the server.
+- No existing RustDesk protocol messages, wire formats, or database schema were changed — this fork is strictly additive.
+- Audit log entries are written for admin API logins and device-list queries.
+
+### Documentation
+
+- **[docs/ADMIN_PRESENCE_DEVELOPMENT.md](docs/ADMIN_PRESENCE_DEVELOPMENT.md)** — full development-environment setup, build, and deployment instructions for this fork, including both a systemd (bare-metal/VM) deployment path and a Docker/Docker Compose path.
+- **[docs/ADMIN_PRESENCE_CHANGELOG.md](docs/ADMIN_PRESENCE_CHANGELOG.md)** — dated changelog of every change made in this fork, newest first.
+- **[docs/ADMIN_PRESENCE_AI_HANDOFF.md](docs/ADMIN_PRESENCE_AI_HANDOFF.md)** — a public-safe context primer for AI coding agents picking up this fork with no prior history.
+
+### Quick start (see the development doc for full detail, including Docker Compose)
+
+```bash
+git clone https://github.com/hrezenmsft/rustdeskadmin-server.git
+cd rustdeskadmin-server
+git remote add upstream https://github.com/rustdesk/rustdesk-server.git
+git remote set-url --push upstream DISABLED
+git submodule update --init --recursive
+cargo build --release
+./target/release/rustdesk-utils hashtoken '<your-long-random-admin-token>'
+# Set ADMIN_API_TOKEN_HASH / ADMIN_API_JWT_SECRET / ADMIN_API_PORT, then run hbbs/hbbr as usual.
+```
+
+Upstream project: **[rustdesk/rustdesk-server](https://github.com/rustdesk/rustdesk-server)** — this fork tracks it read-only via the `upstream` remote (push disabled) and only adds the administrator presence API described above; it does not otherwise change RustDesk's rendezvous/relay protocol or security model.
+
+---
+
 [**Download**](https://github.com/rustdesk/rustdesk-server/releases)
 
 [**Manual**](https://rustdesk.com/docs/en/self-host/)

@@ -8,6 +8,21 @@ Entries are grouped by date, newest first. Each dated section corresponds to one
 
 ### Added
 
+- Deployed the admin-presence-enabled server as Docker Compose–managed containers (`hbbs`/`hbbr`, host networking) on the lab server VM, replacing the earlier systemd-managed baseline for day-to-day testing.
+
+### Changed
+
+- Repository renamed on GitHub from `rustdesk-server` to `rustdeskadmin-server` (origin remote updated to match; `upstream` remote unchanged, still points read-only at `rustdesk/rustdesk-server`).
+- Fixed the Docker image build failing under `apt-get update` inside `debian:bookworm-slim` with "At least one invalid signature was encountered" — root cause was the build host's clock being far enough ahead of real-world time to fall outside the Debian repo's signed `Valid-Until` window; fixed by adding `Acquire::Check-Valid-Until "false";` to the apt config in every Dockerfile stage that runs `apt-get update`.
+- Fixed a Docker Compose–specific bug where literal `$` characters in the bcrypt `ADMIN_API_TOKEN_HASH` value (for example `$2b$12$...`) were being interpreted as Compose environment-variable interpolation syntax; fixed by escaping every `$` as `$$` in `docker-compose.yml`. This does not affect the systemd/`docker run` deployment paths, only Compose.
+- Fixed the Docker container generating a brand-new server keypair on first start instead of reusing the one already known to existing endpoints; the original keypair (`id_ed25519`/`id_ed25519.pub`) must be copied into the named Compose volume before starting the containers for the first time, otherwise every previously-registered endpoint will need to re-pair.
+- Disabled (and stopped) the previously-installed systemd `rustdesk-hbbs`/`rustdesk-hbbr` services on the lab server VM after switching to the Docker Compose deployment, to avoid a port-bind conflict with the containers' `network_mode: host` networking on VM reboot.
+- Diagnosed and fixed a disk-full condition on the lab server VM (`/` at 100% used, causing writes to silently truncate to 0 bytes with no error) by expanding the LVM logical volume into previously-unallocated physical volume space (`lvextend -l +100%FREE` + `resize2fs`) and clearing an obsolete 6.5&nbsp;GB build directory and package caches.
+
+## 2026-09-07 01:23 (`ce054cd` — Add code comments, sanitize docs, add AI handoff and build/deploy guides)
+
+### Added
+
 - Added a public-safe AI handoff document (`docs/ADMIN_PRESENCE_AI_HANDOFF.md`) with generated/example values for future agents with no prior context on this fork.
 - Added consolidated "How to Build", "How to Set Up the Development Environment", and "How to Deploy" (systemd and Docker) sections to `docs/ADMIN_PRESENCE_DEVELOPMENT.md` and the AI handoff document.
 - Added a Docker deployment path for the admin-presence-enabled server, including required environment variables and port exposure for the admin API alongside the existing rendezvous/relay ports.

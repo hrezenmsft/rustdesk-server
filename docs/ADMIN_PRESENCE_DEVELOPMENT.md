@@ -48,8 +48,8 @@ Expose `GET /admin/v1/devices?status=online` only to authorized administrators. 
 2. Install Rust via `rustup` (stable channel; this repo does not pin a specific version): `curl https://sh.rustup.rs -sSf | sh`, then `rustup default stable`.
 3. Clone your fork and add the upstream remote read-only, so you can pull upstream fixes without accidentally pushing to it:
    ```bash
-   git clone https://github.com/<your-fork>/rustdesk-server.git
-   cd rustdesk-server
+   git clone https://github.com/<your-fork>/rustdeskadmin-server.git
+   cd rustdeskadmin-server
    git remote add upstream https://github.com/rustdesk/rustdesk-server.git
    git remote set-url --push upstream DISABLED
    git submodule update --init --recursive   # required for libs/hbb_common
@@ -81,8 +81,8 @@ This is the recommended path for a private lab or a small production deployment 
    ```
 3. **Clone the fork and build**, either directly on the VM or by building elsewhere and copying the binaries over:
    ```bash
-   git clone https://github.com/<your-fork>/rustdesk-server.git
-   cd rustdesk-server
+   git clone https://github.com/<your-fork>/rustdeskadmin-server.git
+   cd rustdeskadmin-server
    git submodule update --init --recursive
    cargo build --release
    ```
@@ -143,10 +143,11 @@ This is the recommended path for a private lab or a small production deployment 
 
 This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-classic/Dockerfile`) that both expect prebuilt `hbbs`/`hbbr` binaries to already exist in the build context (they are normally populated by CI from a prior `cargo build --release` step, not built inside the Dockerfile). To build and run a container image that includes the admin-presence API from source, use a small multi-stage Dockerfile of your own:
 
-1. **Create the Dockerfile** at the repo root (e.g. `docker-admin/Dockerfile`, alongside the existing `docker/` and `docker-classic/` folders):
+1. **Create the Dockerfile** at the repo root (e.g. `docker-admin/Dockerfile`, alongside the existing `docker/` and `docker-classic/` folders). If your build/runtime host's clock is not closely synced to real-world time (observed on some lab VMs), add the `Check-Valid-Until "false"` apt workaround shown below in **both** stages — otherwise `apt-get update` can fail with `At least one invalid signature was encountered` because Debian's `InRelease` signature validity window no longer overlaps the container's clock:
    ```dockerfile
    # syntax=docker/dockerfile:1
    FROM rust:1-bookworm AS build
+   RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
    RUN apt-get update && apt-get install -y --no-install-recommends \
        pkg-config libssl-dev protobuf-compiler && rm -rf /var/lib/apt/lists/*
    WORKDIR /src
@@ -154,6 +155,7 @@ This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-
    RUN cargo build --release
 
    FROM debian:bookworm-slim
+   RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
    RUN apt-get update && apt-get install -y --no-install-recommends \
        ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
    COPY --from=build /src/target/release/hbbs /usr/local/bin/hbbs
@@ -237,7 +239,9 @@ This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-
      rustdesk-data:
    ```
    `network_mode: host` and `ports:` are mutually exclusive in Compose; if you fall back to bridge networking, remove `network_mode: host` and add the `ports:` list shown in the bridge example above instead.
-   Then `docker compose up -d --build`.
+
+   **Escaping the bcrypt hash in `docker-compose.yml`:** Compose treats `$` as the start of a variable-substitution token even inside quoted scalar values. A bcrypt hash (e.g. `$2b$12$...`) written literally into `ADMIN_API_TOKEN_HASH` will have each `$x` sequence silently interpreted (and usually stripped) as an undefined variable reference, corrupting the hash so no plaintext token will ever validate against it. Double every literal `$` as `$$` in the compose file (e.g. `$$2b$$12$$...`), or place the raw single-`$` value in a `.env` file referenced via `env_file:` instead, where no substitution is performed.
+
 6. **Verify the deployment:**
    ```bash
    docker ps                       # confirm both containers are Up
@@ -248,6 +252,15 @@ This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-
 7. **Upgrading:** rebuild the image (`docker build`/`docker compose build`) and recreate the containers (`docker compose up -d` or `docker stop && docker rm && docker run` again) — the named `rustdesk-data` volume persists the keypair/database across recreation.
 
 Persist the `/data` volume across restarts so the server keypair and any embedded SQLite database are not regenerated/lost. As with the systemd path, keep the admin API behind HTTPS termination and network-layer restrictions (firewall/VPN, avoid publishing port `21114` directly to `0.0.0.0` on an internet-facing host) before exposing it publicly — see "Internet Exposure Guidance" above.
+
+**Preserving an existing server keypair when moving to Docker:** `hbbs` auto-generates a new `id_ed25519`/`id_ed25519.pub` keypair the first time it starts against an empty `/data`, which silently changes the server's public key fingerprint and breaks every client that already trusted the old one. If you are migrating an existing deployment (e.g. from the systemd path above) into Docker, copy the existing keypair files into the named volume *before* the first `docker compose up`, or immediately after (stop the containers, `docker cp` the two files into the volume's mount point, restart):
+```bash
+docker compose stop hbbs hbbr
+docker run --rm -v rustdeskadmin-server_rustdesk-data:/data -v /path/to/old/data:/old alpine \
+  cp /old/id_ed25519 /old/id_ed25519.pub /data/
+docker compose start hbbs hbbr
+```
+Verify the fingerprint matches the original by checking `id_ed25519.pub` before and after, and confirm existing clients reconnect without a "server key changed" warning.
 
 ## Change Discipline
 
