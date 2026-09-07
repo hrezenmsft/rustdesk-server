@@ -7,6 +7,7 @@ All notable changes to this custom administrator-presence server extension are r
 ### Added
 
 - Implemented the authenticated, versioned admin presence API with bcrypt login, short-lived JWT bearer tokens, least-privilege online-device responses, audit logging, fail-closed configuration, and `rustdesk-utils hashtoken`.
+- Deployed the API to `rd-admin-server` and validated authenticated listing, missing/invalid-token rejection, unsupported-filter rejection, and online/offline timeout behavior with `rd-endpoint-01`.
 - Initial development environment and versioned, authenticated online-device API contract documentation.
 - Stood up `rd-admin-server` (Ubuntu 24.04 Hyper-V VM) on the "Default Switch" and resolved a DHCP conflict / subnet-mask mismatch that had blocked lab VM networking.
 - Built the unmodified upstream server baseline (`hbbs`, `hbbr`, `rustdesk-utils` via `cargo build --release`) and installed it as systemd services (`rustdesk-hbbs`, `rustdesk-hbbr`).
