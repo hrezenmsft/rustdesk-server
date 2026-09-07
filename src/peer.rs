@@ -27,6 +27,10 @@ pub const IP_BLOCK_DUR: u64 = 60;
 pub(crate) struct PeerInfo {
     #[serde(default)]
     pub(crate) ip: String,
+    #[serde(default)]
+    pub(crate) hostname: String,
+    #[serde(default)]
+    pub(crate) username: String,
 }
 
 /// Minimal, least-privilege view of a currently-online peer, used only by the
@@ -35,6 +39,7 @@ pub(crate) struct PeerInfo {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct OnlineDevice {
     pub(crate) id: String,
+    pub(crate) name: Option<String>,
     pub(crate) last_seen_ms: i64,
 }
 
@@ -197,10 +202,17 @@ impl PeerMap {
         let map = self.map.read().await;
         let mut out = Vec::with_capacity(map.len());
         for (id, peer) in map.iter() {
-            let elapsed = peer.read().await.last_reg_time.elapsed().as_millis() as i64;
+            let peer = peer.read().await;
+            let elapsed = peer.last_reg_time.elapsed().as_millis() as i64;
             if elapsed < timeout_ms {
+                let name = if peer.info.hostname.is_empty() {
+                    None
+                } else {
+                    Some(peer.info.hostname.clone())
+                };
                 out.push(OnlineDevice {
                     id: id.clone(),
+                    name,
                     last_seen_ms: elapsed,
                 });
             }

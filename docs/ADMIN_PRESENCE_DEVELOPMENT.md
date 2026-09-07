@@ -32,7 +32,7 @@ Expose `GET /admin/v1/devices?status=online` only to authorized administrators. 
 
 - Added `GET /admin/v1/devices?status=online` and `POST /admin/v1/auth/login` on the separate API port `21114` (override with `ADMIN_API_PORT`).
 - The API is disabled unless `ADMIN_API_TOKEN_HASH` is configured. Login verifies the bcrypt hash and returns a 15-minute JWT signed with `ADMIN_API_JWT_SECRET` (an ephemeral secret is used if the optional setting is omitted).
-- Device enumeration reads only the live in-memory `PeerMap`, applies the existing 30-second rendezvous registration timeout, returns only device ID and last-seen seconds, and writes audit events to the server log.
+- Device enumeration reads only the live in-memory `PeerMap`, applies the existing 30-second rendezvous registration timeout, returns device ID, optional device name when known, and last-seen seconds, and writes audit events to the server log.
 - `rustdesk-utils hashtoken <token>` generates the bcrypt value needed for `ADMIN_API_TOKEN_HASH`. No existing RustDesk protocol messages or database schema were changed.
 - Deployment validation installed the new `hbbs` binary on `rd-admin-server`, enabled the API on port `21114`, verified missing/invalid tokens are rejected, verified unsupported status filters are rejected, and confirmed device `486567681` appears/disappears with the rendezvous registration timeout.
 

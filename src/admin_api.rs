@@ -69,6 +69,8 @@ struct LoginResponse {
 #[derive(Debug, Serialize)]
 struct DeviceView {
     id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
     last_seen_secs: f64,
 }
 
@@ -205,6 +207,7 @@ async fn list_devices(
         .into_iter()
         .map(|d| DeviceView {
             id: d.id,
+            name: d.name,
             last_seen_secs: d.last_seen_ms as f64 / 1000.0,
         })
         .collect();

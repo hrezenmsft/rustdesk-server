@@ -6,6 +6,7 @@ All notable changes to this custom administrator-presence server extension are r
 
 ### Added
 
+- Added an optional `name` field to admin presence device responses so clients can show a friendly name above the RustDesk ID when safe metadata is available.
 - Implemented the authenticated, versioned admin presence API with bcrypt login, short-lived JWT bearer tokens, least-privilege online-device responses, audit logging, fail-closed configuration, and `rustdesk-utils hashtoken`.
 - Deployed the API to `rd-admin-server` and validated authenticated listing, missing/invalid-token rejection, unsupported-filter rejection, and online/offline timeout behavior with `rd-endpoint-01`.
 - Initial development environment and versioned, authenticated online-device API contract documentation.
