@@ -188,24 +188,45 @@ Important files:
 
 | File | Purpose |
 |---|---|
-| `src/admin_api.rs` | Defines login, JWT validation, online-device listing, and audit logging. |
+| `src/admin_api.rs` | Defines auth (ed25519 challenge/verify, primary; legacy shared-token login, deprecated), JWT validation, online-device listing, and audit logging. |
+| `src/admin_keys.rs` | `AdminKeyStore`: JSON-file-backed store of authorized per-client ed25519 public keys (add/revoke/list/find-active/touch-last-used) plus `fingerprint_of()`. |
+| `src/admin_auth.rs` | `ChallengeStore`: ed25519 challenge-response state machine (per-key-scoped, single-use, 30s TTL nonces). |
 | `src/peer.rs` | Adds `OnlineDevice` and `PeerMap::list_online()`. |
 | `src/rendezvous_server.rs` | Starts the admin API task beside the existing rendezvous server. |
-| `src/lib.rs` | Registers the admin API module. |
-| `src/utils.rs` | Adds `rustdesk-utils hashtoken <token>` and `rustdesk-utils initadmin [env-file] [--force]` (generates + configures both the admin token and JWT secret in one step). |
+| `src/lib.rs` | Registers the admin API, `admin_keys`, and `admin_auth` modules. |
+| `src/utils.rs` | Adds `rustdesk-utils genadminkey <label>` / `listadminkeys` / `revokeadminkey <fingerprint>` (v2.0.0, primary key lifecycle) and `hashtoken <token>` / `initadmin` (legacy, still available for v1.x migration). |
 
-### Server API
+### Server API (v2.0.0: per-client ed25519 challenge-response, primary)
 
-Login:
+Step 1 — request a challenge for this client's public key:
 
 ```http
-POST /admin/v1/auth/login
+POST /admin/v1/auth/challenge
 Content-Type: application/json
 
-{"token":"<admin-token>"}
+{"public_key":"<base64 raw ed25519 public key>"}
 ```
 
 Response:
+
+```json
+{"nonce": "<hex nonce>", "expires_in": 30}
+```
+
+Step 2 — sign the nonce with the matching private key and verify:
+
+```http
+POST /admin/v1/auth/verify
+Content-Type: application/json
+
+{
+  "public_key": "<base64 raw ed25519 public key>",
+  "nonce": "<hex nonce from step 1>",
+  "signature": "<base64 detached ed25519 signature over the nonce's UTF-8 bytes>"
+}
+```
+
+Response (same shape the legacy login issues):
 
 ```json
 {
@@ -215,7 +236,18 @@ Response:
 }
 ```
 
-Device list:
+Both endpoints fail closed with the same error shape for unknown/revoked keys (`401 unknown_or_revoked_key`), so neither can be used to enumerate which keys are registered. A nonce is scoped to the exact key it was issued for, is single-use (consumed on first verify attempt, success or failure), and expires after 30 seconds.
+
+Legacy login (v1.x, deprecated — only for migration, requires `ADMIN_API_TOKEN_HASH` to still be configured or returns `404 not_supported`):
+
+```http
+POST /admin/v1/auth/login
+Content-Type: application/json
+
+{"token":"<admin-token>"}
+```
+
+Device list (unchanged since v1.x — both auth paths issue the same JWT bearer token this endpoint consumes):
 
 ```http
 GET /admin/v1/devices?status=online
@@ -242,29 +274,41 @@ Configuration:
 
 | Setting | Required | Purpose |
 |---|---|---|
-| `ADMIN_API_TOKEN_HASH` | Yes | bcrypt hash of the admin token. If absent, the API is disabled fail-closed. |
+| `ADMIN_API_KEYS_FILE` | Optional | Path to the authorized-keys JSON file managed by `rustdesk-utils genadminkey`/`listadminkeys`/`revokeadminkey`. Defaults to a file in the current working directory. |
+| `ADMIN_API_TOKEN_HASH` | Only for v1.x migration | bcrypt hash of the legacy shared admin token. If neither this nor at least one enrolled key exists, the API is disabled fail-closed. |
 | `ADMIN_API_JWT_SECRET` | Strongly recommended | Stable random secret for signing 15-minute JWTs. |
 | `ADMIN_API_PORT` | Optional | API port, default `21114`. |
 
 Implemented protections:
 
 - No unauthenticated device enumeration.
-- Login token verified with bcrypt.
-- Device list requires a valid short-lived JWT.
+- Primary auth (v2.0.0): per-client ed25519 challenge-response — a client must hold the private key matching one of the server's authorized public keys, and can be individually revoked (`revokeadminkey`) without affecting any other enrolled client.
+- Legacy auth (v1.x, deprecated): shared bcrypt-verified token, all-or-nothing revocation (rotate the one shared secret).
+- Device list requires a valid short-lived JWT (issued identically by either auth path).
 - Unsupported status filters are rejected.
 - Device list reads only in-memory rendezvous state.
 - No direct database, file, or log access is exposed.
 - Response omits IP addresses and returns least-privilege data only.
-- Login and device-list attempts are audit-logged.
-- Existing RustDesk protocol messages are not changed.
+- Every auth attempt (challenge issuance, verify, legacy login) and device-list query is audit-logged.
+- Existing RustDesk protocol messages are not changed. (An earlier design considered tunnelling the admin API over the rendezvous connection via the protocol's dormant `HttpProxyRequest`/`KeyExchange` messages; this was rejected because `KeyExchange` handling doesn't exist server-side in this fork and implementing it would mean pushing new messages onto the main rendezvous port, risking interference with stock clients. The admin API keeps its own separate port instead.)
 
-Recommended: generate and configure both values in one step:
+Enroll the first per-client key (recommended, v2.0.0):
+
+```bash
+./rustdesk-utils genadminkey "nina-laptop"
+# Prints the 64-byte private key ONCE — copy it into the client's
+# Settings > Network > Admin Presence > "Enroll key" field immediately.
+./rustdesk-utils listadminkeys
+./rustdesk-utils revokeadminkey <fingerprint>   # to revoke a single client
+```
+
+Or, only for migrating an existing v1.x deployment, generate and configure the legacy shared token in one step:
 
 ```bash
 ./rustdesk-utils initadmin
 ```
 
-Or generate just the bcrypt hash for a token you already chose yourself:
+Or generate just the legacy bcrypt hash for a token you already chose yourself:
 
 ```bash
 ./rustdesk-utils hashtoken '<long-random-admin-token>'
@@ -288,20 +332,21 @@ If safe hostname metadata exists in `PeerInfo`, the server includes it as option
 
 ## 6. Client implementation details
 
-The client change is additive and Flutter-focused. It adds a desktop admin pane and settings UI without changing RustDesk's target connection authorization behavior.
+The client change is additive and Flutter-focused. It adds a desktop admin pane and settings UI without changing RustDesk's target connection authorization behavior. All admin-presence logic — including the v2.0.0 keypair handling — is pure Dart; no Rust source file or `flutter_rust_bridge` binding was touched.
 
 Important files:
 
 | File | Purpose |
 |---|---|
-| `flutter/lib/models/admin_presence_model.dart` | Admin API login, JWT handling, refresh, stale cache, local-ID filtering. |
+| `flutter/lib/models/admin_presence_model.dart` | Admin API auth (v2.0.0 key-based `loginWithKeyPair()`, primary; legacy `login(token)`, deprecated), JWT handling, refresh, stale cache, local-ID filtering. |
+| `flutter/lib/models/admin_presence_keypair.dart` | v2.0.0: keypair load/import/clear, fingerprint derivation, DPAPI-encrypted local storage of the private key seed. |
 | `flutter/lib/common/widgets/admin_presence_dialog.dart` | Embedded `AdminPresencePane` and device cards. |
 | `flutter/lib/common/widgets/peer_tab_page.dart` | Adds the first-left admin icon and renders the admin pane. |
 | `flutter/lib/models/peer_tab_model.dart` | Adds `PeerTabIndex.admin` and excludes it from the draggable normal tab strip. |
 | `flutter/lib/common/widgets/peers_view.dart` | Handles the admin logical tab in shared view wiring. |
 | `flutter/lib/common/widgets/peer_card.dart` | Handles the admin logical tab in shared deletion switch logic. |
 | `flutter/lib/consts.dart` | Adds admin-presence option keys. |
-| `flutter/lib/desktop/pages/desktop_setting_page.dart` | Adds Settings > Network > Admin Presence. |
+| `flutter/lib/desktop/pages/desktop_setting_page.dart` | Adds Settings > Network > Admin Presence, including the v2.0.0 key enrollment UI. |
 
 ### Client settings
 
@@ -309,8 +354,10 @@ The Windows admin client stores:
 
 ```dart
 const String kOptionAdminPresenceServer = "admin-presence-server";
-const String kOptionAdminPresenceToken = "admin-presence-token";
+const String kOptionAdminPresenceToken = "admin-presence-token";           // legacy, deprecated
 const String kOptionAdminPresenceDevices = "admin-presence-devices";
+const String kOptionAdminPresencePrivateKeyEnc = "admin-presence-privkey-enc"; // v2.0.0
+const String kOptionAdminPresencePublicKey = "admin-presence-pubkey";         // v2.0.0
 ```
 
 Settings location:
@@ -322,9 +369,10 @@ Settings > Network > Admin Presence
 Fields:
 
 - Admin server address: `host:port`, `http://host:port`, or `https://host`.
-- Admin token: plaintext token matching the server-side bcrypt hash.
+- Admin key (v2.0.0, primary): paste the 64-byte base64 private key printed once by `rustdesk-utils genadminkey` and click "Enroll key". The enrolled key's fingerprint is shown (matches the server's `admin_keys::fingerprint_of` exactly) so it can be cross-checked against `rustdesk-utils listadminkeys`. "Remove key from this device" clears local enrollment only — revoke server-side separately with `rustdesk-utils revokeadminkey`.
+- Legacy shared token (v1.x, deprecated, collapsed by default): plaintext token matching the server-side bcrypt hash. Only consulted if no admin key is enrolled.
 
-The token is currently stored in the RustDesk local options store for convenience. For production, prefer Windows Credential Manager or another OS-protected secret store.
+The v2.0.0 private key seed is DPAPI-encrypted at rest (`CryptProtectData`/`CryptUnprotectData`, current-user scope) via the `win32` package before being stored in the RustDesk local options store — decryption only succeeds on the same Windows user profile that enrolled it. The legacy token remains stored in plaintext in local options; migrate to a key when possible.
 
 ### Admin pane behavior
 
@@ -378,6 +426,8 @@ Use normalized comparisons for:
 cargo check --tests
 cargo test --lib peer::tests::list_online_filters_by_timeout -- --nocapture
 cargo test --lib admin_api::tests -- --nocapture
+cargo test --lib admin_keys::tests -- --nocapture
+cargo test --lib admin_auth::tests -- --nocapture
 cargo build --release --bin hbbs
 ```
 
@@ -388,6 +438,7 @@ cd C:\dev\rustdesk-client\flutter
 $env:Path += ';C:\Program Files\Git\cmd'
 C:\dev\flutter\3.24.5\bin\flutter.bat analyze `
   lib\models\admin_presence_model.dart `
+  lib\models\admin_presence_keypair.dart `
   lib\common\widgets\admin_presence_dialog.dart `
   lib\common\widgets\peer_tab_page.dart `
   lib\common\widgets\peers_view.dart `
@@ -395,6 +446,7 @@ C:\dev\flutter\3.24.5\bin\flutter.bat analyze `
   lib\models\peer_tab_model.dart `
   lib\desktop\pages\desktop_setting_page.dart `
   lib\consts.dart
+C:\dev\flutter\3.24.5\bin\flutter.bat test test\admin_presence_keypair_test.dart
 C:\dev\flutter\3.24.5\bin\flutter.bat build windows --release
 ```
 
@@ -403,6 +455,16 @@ Existing upstream/deprecation analyzer info messages may appear. New analyzer er
 ### API smoke tests
 
 ```bash
+# v2.0.0 primary path: challenge/verify with an enrolled key
+NONCE=$(curl -s -X POST https://admin-api.example.com/admin/v1/auth/challenge \
+  -H 'Content-Type: application/json' \
+  -d '{"public_key":"<base64 public key>"}' | jq -r .nonce)
+SIG=$(sign_with_private_key "$NONCE")   # produce a base64 detached ed25519 signature
+curl -X POST https://admin-api.example.com/admin/v1/auth/verify \
+  -H 'Content-Type: application/json' \
+  -d "{\"public_key\":\"<base64 public key>\",\"nonce\":\"$NONCE\",\"signature\":\"$SIG\"}"
+
+# legacy path (only if ADMIN_API_TOKEN_HASH is still configured)
 curl -X POST https://admin-api.example.com/admin/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"token":"<admin-token>"}'
@@ -413,8 +475,10 @@ curl https://admin-api.example.com/admin/v1/devices?status=online \
 
 Expected:
 
-- Valid login returns a JWT.
-- Missing/invalid login token returns `401`.
+- Valid challenge+verify returns a JWT; an unknown/revoked public key returns `401 unknown_or_revoked_key` from `/auth/challenge` (fails closed, does not reveal whether the key is unknown vs. revoked).
+- A stale/replayed/wrong-key nonce returns `401` from `/auth/verify` (`no_such_challenge`/`challenge_expired`).
+- Valid legacy login returns a JWT (only if `ADMIN_API_TOKEN_HASH` is configured; otherwise `404 not_supported`).
+- Missing/invalid legacy login token returns `401`.
 - Missing/invalid bearer token returns `401`.
 - Unsupported status filter returns `400`.
 - Online endpoint appears while registered.
@@ -432,11 +496,11 @@ Before internet exposure:
 
 1. Put the admin API behind HTTPS/TLS.
 2. Restrict access with firewall allow-lists, VPN, WireGuard, Tailscale, Zero Trust access, or equivalent controls.
-3. Add rate limiting to `/admin/v1/auth/login`.
-4. Use a long random admin token.
-5. Store only the bcrypt hash in `ADMIN_API_TOKEN_HASH`.
+3. Add rate limiting to `/admin/v1/auth/challenge`, `/admin/v1/auth/verify`, and (if still enabled) `/admin/v1/auth/login`.
+4. Prefer per-client ed25519 keys (`rustdesk-utils genadminkey`) over the legacy shared token — revoke a single compromised client with `rustdesk-utils revokeadminkey <fingerprint>` instead of rotating one secret for every admin.
+5. If the legacy shared token is still in use during migration, use a long random value and store only the bcrypt hash in `ADMIN_API_TOKEN_HASH`.
 6. Set a stable random `ADMIN_API_JWT_SECRET`.
-7. Rotate the token and JWT secret if disclosure is suspected.
+7. Rotate/revoke keys (or the legacy token/JWT secret) if disclosure is suspected.
 8. Monitor audit logs for failed login attempts and unusual list activity.
 9. Consider mTLS/OIDC, scoped admin identities, revocation, and OS-protected client token storage for production.
 

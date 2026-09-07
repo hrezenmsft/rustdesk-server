@@ -1,5 +1,6 @@
 use dns_lookup::{lookup_addr, lookup_host};
 use hbb_common::{bail, ResultType};
+use hbbs::admin_keys::AdminKeyStore;
 use sodiumoxide::crypto::sign;
 use std::{
     env,
@@ -21,7 +22,20 @@ Available Commands:
                                                   [env-file] (default: .env in the current directory,
                                                   which is what hbbs/hbbr load on startup). Prints the
                                                   plaintext admin token once. Refuses to overwrite an
-                                                  already-configured token unless --force is given."
+                                                  already-configured token unless --force is given.
+    genadminkey <label> [keys-file]               Generate a new ed25519 keypair, register its public
+                                                  key as an authorized admin client (labelled <label>)
+                                                  in [keys-file] (default: admin_authorized_keys.json,
+                                                  same convention as ADMIN_API_KEYS_FILE), and print
+                                                  the private key once for the admin client to import.
+                                                  This is the v2.0.0 replacement for a shared admin
+                                                  token: each admin client gets its own key.
+    listadminkeys [keys-file]                     List every registered admin key (fingerprint, label,
+                                                  added/last-used time, revoked status).
+    revokeadminkey <fingerprint> [keys-file]      Revoke a previously registered admin key by its
+                                                  fingerprint (as shown by listadminkeys). Immediately
+                                                  prevents that key from authenticating; does not
+                                                  require a server restart."
     );
     process::exit(0x0001);
 }
@@ -175,6 +189,132 @@ fn init_admin(env_path: &str, force: bool) {
     println!("  sudo systemctl restart rustdesk-hbbs rustdesk-hbbr   # systemd/.deb install");
 }
 
+// Admin-presence customization (v2.0.0): resolve the keys-file path the same
+// way `admin_api::serve` does, so this CLI and the running server always
+// agree on which file they're reading/writing.
+fn resolve_keys_path(explicit: Option<&str>) -> std::path::PathBuf {
+    match explicit {
+        Some(p) => std::path::PathBuf::from(p),
+        None => hbbs::admin_keys::AdminKeyStore::resolve_default_path(),
+    }
+}
+
+fn gen_admin_key(label: &str, keys_path: Option<&str>) {
+    let path = resolve_keys_path(keys_path);
+    let store = match AdminKeyStore::load(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("ERROR: failed to load '{}': {e}", path.display());
+            process::exit(0x0001);
+        }
+    };
+    let (pk, sk) = sign::gen_keypair();
+    let record = match store.add(&pk, label) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("ERROR: failed to register key: {e}");
+            process::exit(0x0001);
+        }
+    };
+    println!("Admin key registered in '{}'.\n", path.display());
+    println!("=======================================================================");
+    println!("  PRIVATE KEY — import this into the admin client's Settings > Network >");
+    println!("  Admin Presence enrollment. SAVE IT NOW: it is never stored server-side");
+    println!("  and cannot be recovered later.\n");
+    println!("    {}\n", base64::encode(sk));
+    println!("=======================================================================\n");
+    println!("Label:       {}", record.label);
+    println!("Fingerprint: {}", record.fingerprint);
+    println!("Public key:  {}\n", record.public_key);
+    println!(
+        "No server restart is required: the running server re-reads '{}' the next \
+         time it needs to verify a login.",
+        path.display()
+    );
+}
+
+fn list_admin_keys(keys_path: Option<&str>) {
+    let path = resolve_keys_path(keys_path);
+    let store = match AdminKeyStore::load(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("ERROR: failed to load '{}': {e}", path.display());
+            process::exit(0x0001);
+        }
+    };
+    let keys = store.list();
+    if keys.is_empty() {
+        println!("No admin keys registered in '{}'.", path.display());
+        return;
+    }
+    println!(
+        "{:<18} {:<24} {:<8} {:<20} {:<20}",
+        "FINGERPRINT", "LABEL", "REVOKED", "ADDED", "LAST USED"
+    );
+    for k in keys {
+        let added = format_epoch_secs(k.added_at);
+        let last_used = k
+            .last_used_at
+            .map(format_epoch_secs)
+            .unwrap_or_else(|| "never".to_owned());
+        println!(
+            "{:<18} {:<24} {:<8} {:<20} {:<20}",
+            k.fingerprint,
+            k.label,
+            if k.revoked { "yes" } else { "no" },
+            added,
+            last_used
+        );
+    }
+}
+
+fn format_epoch_secs(secs: u64) -> String {
+    use std::time::{Duration, UNIX_EPOCH};
+    match UNIX_EPOCH.checked_add(Duration::from_secs(secs)) {
+        Some(t) => match t.duration_since(UNIX_EPOCH) {
+            Ok(_) => {
+                // Avoid pulling in a chrono/time dependency just for CLI
+                // display: seconds-since-epoch is unambiguous and already
+                // sufficient to cross-reference against server logs, which
+                // log the same `now_secs()`-style unix timestamps.
+                format!("{secs} (unix)")
+            }
+            Err(_) => "invalid".to_owned(),
+        },
+        None => "invalid".to_owned(),
+    }
+}
+
+fn revoke_admin_key(fingerprint: &str, keys_path: Option<&str>) {
+    let path = resolve_keys_path(keys_path);
+    let store = match AdminKeyStore::load(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("ERROR: failed to load '{}': {e}", path.display());
+            process::exit(0x0001);
+        }
+    };
+    match store.revoke(fingerprint) {
+        Ok(true) => {
+            println!(
+                "Revoked admin key '{fingerprint}' in '{}'. No server restart required.",
+                path.display()
+            );
+        }
+        Ok(false) => {
+            println!(
+                "ERROR: no active key with fingerprint '{fingerprint}' found in '{}'.",
+                path.display()
+            );
+            process::exit(0x0001);
+        }
+        Err(e) => {
+            println!("ERROR: failed to update '{}': {e}", path.display());
+            process::exit(0x0001);
+        }
+    }
+}
+
 fn validate_keypair(pk: &str, sk: &str) -> ResultType<()> {
     let sk1 = base64::decode(sk);
     if sk1.is_err() {
@@ -325,6 +465,26 @@ fn main() {
                 }
             }
             init_admin(&env_path, force);
+        }
+        "genadminkey" => {
+            if args.len() <= 2 {
+                error_then_help("You must supply a label for the admin key (e.g. a user or device name)");
+            }
+            let label = args[2].as_str();
+            let keys_path = args.get(3).map(|s| s.as_str());
+            gen_admin_key(label, keys_path);
+        }
+        "listadminkeys" => {
+            let keys_path = args.get(2).map(|s| s.as_str());
+            list_admin_keys(keys_path);
+        }
+        "revokeadminkey" => {
+            if args.len() <= 2 {
+                error_then_help("You must supply the fingerprint of the key to revoke");
+            }
+            let fingerprint = args[2].as_str();
+            let keys_path = args.get(3).map(|s| s.as_str());
+            revoke_admin_key(fingerprint, keys_path);
         }
         _ => print_help(),
     }

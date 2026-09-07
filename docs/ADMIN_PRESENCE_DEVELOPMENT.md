@@ -35,12 +35,23 @@ Expose `GET /admin/v1/devices?status=online` only to authorized administrators. 
 - `rustdesk-utils hashtoken <token>` generates the bcrypt value needed for `ADMIN_API_TOKEN_HASH` for a token you already chose yourself. `rustdesk-utils initadmin [env-file] [--force]` is the recommended path for new deployments: it generates a fresh random admin token *and* `ADMIN_API_JWT_SECRET`, bcrypt-hashes the token, and writes both into a `.env` file (default `.env` in the current directory — the same file `hbbs`/`hbbr` already load from their working directory on startup, see `src/common.rs::init_args`), printing the plaintext token once. No existing RustDesk protocol messages or database schema were changed.
 - Deployment validation installed the new `hbbs` binary in the private lab, enabled the API on port `21114`, verified missing/invalid tokens are rejected, verified unsupported status filters are rejected, and confirmed a test endpoint appears/disappears with the rendezvous registration timeout.
 
+### v2.0.0: per-client ed25519 challenge-response authentication (replaces the shared token as the primary auth path)
+
+**The single shared bcrypt-hashed admin token above is now the *legacy/migration* path only.** Every deployment section further down in this document that still shows `POST /admin/v1/auth/login`, `rustdesk-utils hashtoken`/`initadmin`, or `ADMIN_API_TOKEN_HASH` is documenting that legacy path — it still works exactly as written (nothing was removed), but new deployments should enroll per-client keys instead. See `docs/ADMIN_PRESENCE_AI_HANDOFF.md` §5–7 for the full request/response contract, security model, and validation commands; the summary:
+
+- Each admin client enrolls its own ed25519 keypair instead of every admin workstation sharing one secret: `rustdesk-utils genadminkey "<label>" [keys-file]` generates the keypair, registers the public half in `ADMIN_API_KEYS_FILE` (a JSON file, default in the current working directory), and prints the 64-byte private key **once** — paste it into the client's Settings > Network > Admin Presence > "Enroll key" field immediately, it cannot be recovered later.
+- `rustdesk-utils listadminkeys [keys-file]` shows a table of fingerprint/label/created/last-used/revoked. `rustdesk-utils revokeadminkey <fingerprint> [keys-file]` revokes exactly one client's key without affecting any other enrolled admin or requiring a token rotation.
+- Auth flow: the client calls `POST /admin/v1/auth/challenge` with its public key, signs the returned nonce, and calls `POST /admin/v1/auth/verify` — success issues the same JWT bearer token the legacy `/auth/login` always issued, so `GET /admin/v1/devices` needed zero changes.
+- The server auto-enables the admin API if *either* at least one key is enrolled *or* `ADMIN_API_TOKEN_HASH` is configured, so a brand-new v2.0.0 deployment never has to touch `ADMIN_API_TOKEN_HASH`/`hashtoken`/`initadmin` at all — those only matter if you are migrating an existing v1.x deployment or intentionally keeping the shared-token path enabled during a transition.
+- Design decision (not left open): tunnelling the admin API over the existing rendezvous connection using the protocol's dormant `HttpProxyRequest`/`KeyExchange` messages was considered and rejected, because `KeyExchange` handling doesn't exist server-side in this fork and adding it would mean pushing new messages onto the main rendezvous port, risking interference with stock/unmodified clients. The admin API keeps its existing separate port (`21114`) as the transport; only the auth mechanism running over it changed.
+- Full server crate regression after this change: 21/21 tests passing.
+
 ### Internet Exposure Guidance
 
 - Treat the admin API as an administrative endpoint. Do not expose it over plaintext HTTP on the public internet.
 - Put the API behind HTTPS termination, firewall or VPN restrictions, and operational rate limiting before internet exposure.
-- Use a high-entropy admin token, store only its bcrypt hash in `ADMIN_API_TOKEN_HASH`, set a stable random `ADMIN_API_JWT_SECRET`, and rotate both if disclosure is suspected.
-- The endpoint is fail-closed when `ADMIN_API_TOKEN_HASH` is unset and returns least-privilege data, but network-layer protections are still required for public deployments.
+- Prefer per-client ed25519 keys (`rustdesk-utils genadminkey`) over the legacy shared token for any new or migrated deployment — revoke a single compromised client with `rustdesk-utils revokeadminkey <fingerprint>` instead of rotating one secret for every admin. If the legacy shared token is still in use, use a high-entropy value, store only its bcrypt hash in `ADMIN_API_TOKEN_HASH`, and set a stable random `ADMIN_API_JWT_SECRET`; rotate/revoke keys or the token/JWT secret if disclosure is suspected.
+- The endpoint is fail-closed when neither an enrolled key nor `ADMIN_API_TOKEN_HASH` is configured, and returns least-privilege data, but network-layer protections are still required for public deployments.
 
 ## How to Set Up the Development Environment
 

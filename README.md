@@ -11,14 +11,16 @@ This repository is a **private fork of the official [rustdesk/rustdesk-server](h
 ### What this fork adds
 
 - A new **authenticated, versioned admin API** exposed by `hbbs` on a separate port (default `21114`, override with `ADMIN_API_PORT`):
-  - `POST /admin/v1/auth/login` — exchanges a shared high-entropy admin token (stored server-side only as a bcrypt hash, `ADMIN_API_TOKEN_HASH`) for a short-lived (15-minute) JWT signed with `ADMIN_API_JWT_SECRET`.
-  - `GET /admin/v1/devices?status=online` — returns devices currently registered online with this rendezvous server (ID, optional hostname, last-seen seconds), reading only the existing in-memory peer map and reusing the server's normal 30-second registration heartbeat/timeout — **no new database, file, or log access is exposed to clients**.
-- The API is **fail-closed**: it stays disabled until `ADMIN_API_TOKEN_HASH` is configured, so an unconfigured server exposes nothing new.
-- A new `rustdesk-utils initadmin [env-file] [--force]` subcommand generates a fresh random admin token + `ADMIN_API_JWT_SECRET`, bcrypt-hashes the token, and writes both into a `.env` file (the same file `hbbs`/`hbbr` already load from their working directory on startup) — printing the plaintext token once. `rustdesk-utils hashtoken <token>` remains available if you'd rather choose the plaintext token yourself.
+  - **v2.0.0, primary:** `POST /admin/v1/auth/challenge` + `POST /admin/v1/auth/verify` — per-client ed25519 challenge-response. Each admin client enrolls its own keypair (`rustdesk-utils genadminkey <label>`) instead of sharing one secret, and a single compromised client can be revoked (`rustdesk-utils revokeadminkey <fingerprint>`) without affecting any other admin.
+  - `POST /admin/v1/auth/login` — legacy v1.x path, kept only for migration: exchanges a shared high-entropy admin token (stored server-side only as a bcrypt hash, `ADMIN_API_TOKEN_HASH`) for the same short-lived (15-minute) JWT the key-based path issues. Deprecated; logs a warning on every use.
+  - `GET /admin/v1/devices?status=online` — returns devices currently registered online with this rendezvous server (ID, optional hostname, last-seen seconds), reading only the existing in-memory peer map and reusing the server's normal 30-second registration heartbeat/timeout — **no new database, file, or log access is exposed to clients**. Unchanged since v1.x — either auth path above issues the same bearer token this endpoint consumes.
+- The API is **fail-closed**: it stays disabled until at least one key is enrolled or `ADMIN_API_TOKEN_HASH` is configured, so an unconfigured server exposes nothing new.
+- `rustdesk-utils genadminkey <label>` / `listadminkeys` / `revokeadminkey <fingerprint>` (v2.0.0) manage the per-client key lifecycle. `rustdesk-utils initadmin [env-file] [--force]` / `hashtoken <token>` (legacy) remain available for v1.x migration.
 - No existing RustDesk protocol messages, wire formats, or database schema were changed — this fork is strictly additive.
-- Audit log entries are written for admin API logins and device-list queries.
+- Audit log entries are written for every admin API auth attempt and device-list query.
 
 ### Documentation
+
 
 - **[docs/ADMIN_PRESENCE_DEVELOPMENT.md](docs/ADMIN_PRESENCE_DEVELOPMENT.md)** — full development-environment setup, build, and deployment instructions for this fork, including both a systemd (bare-metal/VM) deployment path and a Docker/Docker Compose path.
 - **[docs/ADMIN_PRESENCE_CHANGELOG.md](docs/ADMIN_PRESENCE_CHANGELOG.md)** — dated changelog of every change made in this fork, newest first.
