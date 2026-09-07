@@ -6,11 +6,19 @@ Entries are grouped by date, newest first. Each dated section corresponds to one
 
 ## Unreleased
 
+_No unreleased changes._
+
+## 2026-09-07 13:35 (`242dd00`, released `v1.1.2`)
+
 ### Fixed
 
 - Fixed the cross-compiled Linux release builds (`amd64`/`arm64v8`/`armv7`/`i386`, all `*-unknown-linux-musl` targets, via the `.github/workflows/build.yaml` release pipeline) failing with `error: could not find system library 'openssl' required by the 'openssl-sys' crate`. Root cause: `tokio-tungstenite` (used for websocket relay/rendezvous connections) pulls in `native-tls` → `openssl-sys` by default on non-macOS/non-Windows targets, and the `cross`-rs musl Docker images used for cross-compilation do not ship system OpenSSL dev headers. Fixed by adding a direct `openssl-sys = { version = "0.9", features = ["vendored"] }` dependency under the existing `cfg(not(any(target_os = "macos", target_os = "windows")))` target section in the root `Cargo.toml`, forcing Cargo's feature unification to statically build OpenSSL from source instead of requiring a system install. This is a build-configuration-only change; no runtime or protocol behavior is affected. (This bug was latent and never previously exercised because the CI pipeline itself had never successfully run — see below.)
 - The first `openssl-sys` fix (declared only under `[target.'cfg(not(macos/windows))'.dependencies]`, i.e. Cargo dependency "kind = normal") was not sufficient: job logs for the retried build showed the *same* pkg-config failure, but this time for an `openssl-sys` build script reporting `$TARGET = x86_64-unknown-linux-gnu` (the CI runner's host triple) instead of the musl cross target — meaning a *different* resolution of `openssl-sys` was being pulled in purely as a host-context (build-script) requirement, which Cargo resolves and unifies features for separately from the target-context ("kind = normal") requirement even on the same platform. Fixed by adding the identical `openssl-sys = { version = "0.9", features = ["vendored"] }` entry under a new `[target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.build-dependencies]` table as well, so both the host-context and target-context resolutions of `openssl-sys` get the `vendored` feature.
 - Discovered and worked around a GitHub restriction specific to forked repositories: automatic `push`/tag-triggered workflow runs (`on.push.tags` in `build.yaml`) do not fire until the repository owner manually dismisses a one-time "enable workflows" banner on the fork's Actions tab in the GitHub web UI — this setting is not exposed via the REST API or `gh` CLI. `workflow_dispatch` runs are unaffected and were used as a workaround (dispatched against the release tag's ref, which resolves `GITHUB_REF` identically to a real tag-push trigger). Recommended permanent fix: visit the Actions tab once, or detach the fork relationship entirely (Settings > General > Danger Zone) so future `git push --tags` triggers releases automatically without manual intervention.
+
+### Added
+
+- First fully green run of the `.github/workflows/build.yaml` release pipeline for this fork (`workflow_dispatch` run `34127289017` against tag `v1.1.2`): all 5 build jobs (Linux amd64/arm64v8/armv7/i386 + Windows), all 4 `.deb` package jobs, all Docker build/push/manifest jobs, and the GitHub release job completed successfully. Published release `v1.1.2` (previously created as a draft by the pipeline) with all binary zips, `.deb` packages, and multi-arch GHCR images (`ghcr.io/hrezenmsft/rustdeskadmin-server` and `-s6`) now publicly available — this is the first "release package" end users can install without building from source.
 
 ## 2026-09-07 09:45 (`b9c4e72`)
 
