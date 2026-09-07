@@ -63,6 +63,9 @@ reqwest = { git = "https://github.com/rustdesk-org/reqwest", features = ["blocki
 [build-dependencies]
 hbb_common = { path = "libs/hbb_common" }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
 [workspace]
 members = ["libs/hbb_common"]
 exclude = ["ui"]

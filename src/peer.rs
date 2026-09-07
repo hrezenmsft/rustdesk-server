@@ -29,6 +29,15 @@ pub(crate) struct PeerInfo {
     pub(crate) ip: String,
 }
 
+/// Minimal, least-privilege view of a currently-online peer, used only by the
+/// authenticated admin presence API (see `admin_api.rs`). Intentionally omits
+/// IP address and any other peer detail beyond what the admin device list needs.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct OnlineDevice {
+    pub(crate) id: String,
+    pub(crate) last_seen_ms: i64,
+}
+
 pub(crate) struct Peer {
     pub(crate) socket_addr: SocketAddr,
     pub(crate) last_reg_time: Instant,
@@ -176,5 +185,57 @@ impl PeerMap {
     #[inline]
     pub(crate) async fn is_in_memory(&self, id: &str) -> bool {
         self.map.read().await.contains_key(id)
+    }
+
+    /// Lists peers currently considered online, i.e. whose last registration
+    /// (heartbeat/keep-alive) happened within `timeout_ms`. This mirrors the
+    /// same online-detection semantics already used for the existing
+    /// `OnlineRequest` protocol handler (`elapsed < REG_TIMEOUT`), reused here
+    /// for the admin presence API. Only in-memory state is read; no database
+    /// or file access is performed.
+    pub(crate) async fn list_online(&self, timeout_ms: i64) -> Vec<OnlineDevice> {
+        let map = self.map.read().await;
+        let mut out = Vec::with_capacity(map.len());
+        for (id, peer) in map.iter() {
+            let elapsed = peer.read().await.last_reg_time.elapsed().as_millis() as i64;
+            if elapsed < timeout_ms {
+                out.push(OnlineDevice {
+                    id: id.clone(),
+                    last_seen_ms: elapsed,
+                });
+            }
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn list_online_filters_by_timeout() {
+        let db_file = format!("test_admin_presence_{}.sqlite3", uuid::Uuid::new_v4());
+        std::env::set_var("DB_URL", &db_file);
+        let pm = PeerMap::new().await.unwrap();
+        std::env::remove_var("DB_URL");
+
+        let fresh = LockPeer::default();
+        fresh.write().await.last_reg_time = Instant::now();
+        pm.map.write().await.insert("fresh-peer".to_owned(), fresh);
+
+        let stale = LockPeer::default();
+        stale.write().await.last_reg_time =
+            Instant::now() - std::time::Duration::from_millis(60_000);
+        pm.map.write().await.insert("stale-peer".to_owned(), stale);
+
+        let online = pm.list_online(30_000).await;
+        let ids: Vec<_> = online.iter().map(|d| d.id.clone()).collect();
+        assert!(ids.contains(&"fresh-peer".to_owned()));
+        assert!(!ids.contains(&"stale-peer".to_owned()));
+
+        for ext in ["", "-shm", "-wal"] {
+            let _ = std::fs::remove_file(format!("{db_file}{ext}"));
+        }
     }
 }

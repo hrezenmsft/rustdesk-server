@@ -14,7 +14,8 @@ fn print_help() {
 Available Commands:
     genkeypair                                   Generate a new keypair
     validatekeypair [public key] [secret key]    Validate an existing keypair
-    doctor [rustdesk-server]                     Check for server connection problems"
+    doctor [rustdesk-server]                     Check for server connection problems
+    hashtoken [token]                            Hash an admin API token for ADMIN_API_TOKEN_HASH"
     );
     process::exit(0x0001);
 }
@@ -30,6 +31,18 @@ fn gen_keypair() {
     let secret_key = base64::encode(sk);
     println!("Public Key:  {public_key}");
     println!("Secret Key:  {secret_key}");
+}
+
+fn hash_token(token: &str) {
+    match bcrypt::hash(token, bcrypt::DEFAULT_COST) {
+        Ok(hash) => {
+            println!("ADMIN_API_TOKEN_HASH={hash}");
+        }
+        Err(e) => {
+            println!("ERROR: failed to hash token: {e}");
+            process::exit(0x0001);
+        }
+    }
 }
 
 fn validate_keypair(pk: &str, sk: &str) -> ResultType<()> {
@@ -164,6 +177,12 @@ fn main() {
                 error_then_help("You must supply the rustdesk-server address");
             }
             doctor(args[2].as_str());
+        }
+        "hashtoken" => {
+            if args.len() <= 2 {
+                error_then_help("You must supply the token to hash");
+            }
+            hash_token(args[2].as_str());
         }
         _ => print_help(),
     }

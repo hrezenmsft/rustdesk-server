@@ -47,7 +47,7 @@ enum Data {
     RelayServers(RelayServers),
 }
 
-const REG_TIMEOUT: i64 = 30_000;
+pub(crate) const REG_TIMEOUT: i64 = 30_000;
 type TcpStreamSink = SplitSink<Framed<TcpStream, BytesCodec>, Bytes>;
 type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungstenite::Message>;
 enum Sink {
@@ -137,7 +137,7 @@ impl RendezvousServer {
         };
         let mut rs = Self {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
-            pm,
+            pm: pm.clone(),
             tx: tx.clone(),
             relay_servers: Default::default(),
             relay_servers0: Default::default(),
@@ -199,6 +199,14 @@ impl RendezvousServer {
                 }
             });
         };
+        {
+            let admin_pm = pm.clone();
+            tokio::spawn(async move {
+                if let Err(err) = crate::admin_api::serve(admin_pm, bind_addr).await {
+                    log::error!("Admin presence API stopped: {err}");
+                }
+            });
+        }
         let main_task = async move {
             loop {
                 log::info!("Start");

@@ -28,6 +28,13 @@ Expose `GET /admin/v1/devices?status=online` only to authorized administrators. 
 - Installed as systemd services (`rustdesk-hbbs`, `rustdesk-hbbr`) from the repo's `systemd/*.service` templates, running under the `lab` user, data in `/var/lib/rustdesk-server`, logs in `/var/log/rustdesk-server`.
 - Validated end-to-end reachability: the unmodified Windows client baseline built from `rustdesk-client`, deployed to `rd-endpoint-01` and pointed at this server via its generated key, successfully registered its peer ID (`update_pk` observed in `hbbs.log`). This confirms rendezvous registration/heartbeat works before any admin-presence API code is added.
 
+### Implemented Admin Presence API
+
+- Added `GET /admin/v1/devices?status=online` and `POST /admin/v1/auth/login` on the separate API port `21114` (override with `ADMIN_API_PORT`).
+- The API is disabled unless `ADMIN_API_TOKEN_HASH` is configured. Login verifies the bcrypt hash and returns a 15-minute JWT signed with `ADMIN_API_JWT_SECRET` (an ephemeral secret is used if the optional setting is omitted).
+- Device enumeration reads only the live in-memory `PeerMap`, applies the existing 30-second rendezvous registration timeout, returns only device ID and last-seen seconds, and writes audit events to the server log.
+- `rustdesk-utils hashtoken <token>` generates the bcrypt value needed for `ADMIN_API_TOKEN_HASH`. No existing RustDesk protocol messages or database schema were changed.
+
 ## Change Discipline
 
 Update this document when the API contract, stored presence data, authorization model, persistence, or deployment workflow changes. Add every externally observable or operational change to `docs/ADMIN_PRESENCE_CHANGELOG.md` in the same change set.
