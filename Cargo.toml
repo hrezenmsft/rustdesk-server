@@ -59,6 +59,13 @@ reqwest = { git = "https://github.com/rustdesk-org/reqwest", features = ["blocki
 
 [target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies]
 reqwest = { git = "https://github.com/rustdesk-org/reqwest", features = ["blocking", "socks", "json", "rustls-tls", "rustls-tls-native-roots", "gzip"], default-features=false }
+# tokio-tungstenite (used for websocket relay/rendezvous connections) pulls in
+# native-tls -> openssl-sys by default on Linux/BSD. Cross-compilation toolchains
+# for musl targets (used by our CI release pipeline, see .github/workflows/build.yaml)
+# do not ship system OpenSSL headers, so force a statically-built ("vendored")
+# OpenSSL instead of relying on a system install. This only affects how OpenSSL is
+# linked at build time; no runtime/protocol behavior changes.
+openssl-sys = { version = "0.9", features = ["vendored"] }
 
 [build-dependencies]
 hbb_common = { path = "libs/hbb_common" }
