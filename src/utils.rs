@@ -15,7 +15,13 @@ Available Commands:
     genkeypair                                   Generate a new keypair
     validatekeypair [public key] [secret key]    Validate an existing keypair
     doctor [rustdesk-server]                     Check for server connection problems
-    hashtoken [token]                            Hash an admin API token for ADMIN_API_TOKEN_HASH"
+    hashtoken [token]                            Hash an admin API token for ADMIN_API_TOKEN_HASH
+    initadmin [env-file] [--force]                Generate a new admin token + JWT secret and write
+                                                  ADMIN_API_TOKEN_HASH/ADMIN_API_JWT_SECRET into
+                                                  [env-file] (default: .env in the current directory,
+                                                  which is what hbbs/hbbr load on startup). Prints the
+                                                  plaintext admin token once. Refuses to overwrite an
+                                                  already-configured token unless --force is given."
     );
     process::exit(0x0001);
 }
@@ -45,6 +51,128 @@ fn hash_token(token: &str) {
             process::exit(0x0001);
         }
     }
+}
+
+// Admin-presence customization: hex-encode raw random bytes. Hex (rather than
+// base64) avoids any escaping concerns wherever the value ends up (shell,
+// .env/ini parsing, JSON request bodies, Docker Compose `$`-interpolation).
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+// Admin-presence customization: merge a single KEY=VALUE pair into a `.env`
+// (INI-style) file, preserving every other existing line untouched. Used
+// instead of `rust-ini`'s writer so that comments and unrelated keys already
+// in the file (e.g. left by an admin, or other keys hbbs/hbbr read from
+// `.env`) are never reformatted or dropped.
+fn set_env_var(path: &str, key: &str, value: &str) -> std::io::Result<()> {
+    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    let mut found = false;
+    let mut lines: Vec<String> = existing
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if !found && !trimmed.starts_with('#') && !trimmed.starts_with(';') {
+                if let Some(eq) = line.find('=') {
+                    if line[..eq].trim().eq_ignore_ascii_case(key) {
+                        found = true;
+                        return format!("{key}={value}");
+                    }
+                }
+            }
+            line.to_string()
+        })
+        .collect();
+    if !found {
+        lines.push(format!("{key}={value}"));
+    }
+    let mut content = lines.join("\n");
+    if !content.is_empty() {
+        content.push('\n');
+    }
+    std::fs::write(path, content)
+}
+
+// Admin-presence customization: true if `path` already has a non-empty
+// ADMIN_API_TOKEN_HASH line, used to avoid silently invalidating an
+// already-distributed admin token on a re-run.
+fn env_has_admin_token_hash(path: &str) -> bool {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .any(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('#') || trimmed.starts_with(';') {
+                return false;
+            }
+            match line.split_once('=') {
+                Some((k, v)) => {
+                    k.trim().eq_ignore_ascii_case("ADMIN_API_TOKEN_HASH") && !v.trim().is_empty()
+                }
+                None => false,
+            }
+        })
+}
+
+// Admin-presence customization: generate a fresh admin token + JWT secret and
+// write them (as `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET`) into an `.env`
+// file in the format hbbs/hbbr already load from their working directory on
+// startup (see `common::init_args`), so no manual bcrypt-hashing or hand
+// edited Compose/systemd config is required to get the admin API running.
+fn init_admin(env_path: &str, force: bool) {
+    if !force && env_has_admin_token_hash(env_path) {
+        println!("ERROR: '{env_path}' already has an ADMIN_API_TOKEN_HASH configured.");
+        println!(
+            "Re-running this would invalidate the current admin token for every already-configured client."
+        );
+        println!(
+            "If you really want to replace it, re-run with: rustdesk-utils initadmin {env_path} --force"
+        );
+        process::exit(0x0001);
+    }
+
+    let token = to_hex(&sodiumoxide::randombytes::randombytes(32));
+    let jwt_secret = to_hex(&sodiumoxide::randombytes::randombytes(32));
+
+    let hash = match bcrypt::hash(&token, bcrypt::DEFAULT_COST) {
+        Ok(h) => h,
+        Err(e) => {
+            println!("ERROR: failed to hash generated token: {e}");
+            process::exit(0x0001);
+        }
+    };
+
+    if let Err(e) = set_env_var(env_path, "ADMIN_API_TOKEN_HASH", &hash) {
+        println!("ERROR: failed to write '{env_path}': {e}");
+        process::exit(0x0001);
+    }
+    if let Err(e) = set_env_var(env_path, "ADMIN_API_JWT_SECRET", &jwt_secret) {
+        println!("ERROR: failed to write '{env_path}': {e}");
+        process::exit(0x0001);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(env_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(env_path, perms);
+        }
+    }
+
+    println!("Admin presence configured in '{env_path}'.\n");
+    println!("=======================================================================");
+    println!("  ADMIN TOKEN — give this to admins to log in. SAVE IT NOW: it cannot");
+    println!("  be recovered later, only its bcrypt hash is stored.\n");
+    println!("    {token}\n");
+    println!("=======================================================================\n");
+    println!("Written to '{env_path}':");
+    println!("  ADMIN_API_TOKEN_HASH={hash}");
+    println!("  ADMIN_API_JWT_SECRET={jwt_secret}\n");
+    println!("Restart hbbs/hbbr (or the container/service) to load this config, e.g.:");
+    println!("  docker compose restart hbbs hbbr                     # Docker Compose");
+    println!("  sudo systemctl restart rustdesk-hbbs rustdesk-hbbr   # systemd/.deb install");
 }
 
 fn validate_keypair(pk: &str, sk: &str) -> ResultType<()> {
@@ -185,6 +313,18 @@ fn main() {
                 error_then_help("You must supply the token to hash");
             }
             hash_token(args[2].as_str());
+        }
+        "initadmin" => {
+            let mut env_path = ".env".to_string();
+            let mut force = false;
+            for a in &args[2..] {
+                if a == "--force" || a == "-f" {
+                    force = true;
+                } else {
+                    env_path = a.clone();
+                }
+            }
+            init_admin(&env_path, force);
         }
         _ => print_help(),
     }

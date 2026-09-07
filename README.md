@@ -14,7 +14,7 @@ This repository is a **private fork of the official [rustdesk/rustdesk-server](h
   - `POST /admin/v1/auth/login` — exchanges a shared high-entropy admin token (stored server-side only as a bcrypt hash, `ADMIN_API_TOKEN_HASH`) for a short-lived (15-minute) JWT signed with `ADMIN_API_JWT_SECRET`.
   - `GET /admin/v1/devices?status=online` — returns devices currently registered online with this rendezvous server (ID, optional hostname, last-seen seconds), reading only the existing in-memory peer map and reusing the server's normal 30-second registration heartbeat/timeout — **no new database, file, or log access is exposed to clients**.
 - The API is **fail-closed**: it stays disabled until `ADMIN_API_TOKEN_HASH` is configured, so an unconfigured server exposes nothing new.
-- A new `rustdesk-utils hashtoken <token>` subcommand to generate the bcrypt hash for `ADMIN_API_TOKEN_HASH` without ever needing to store the plaintext token on the server.
+- A new `rustdesk-utils initadmin [env-file] [--force]` subcommand generates a fresh random admin token + `ADMIN_API_JWT_SECRET`, bcrypt-hashes the token, and writes both into a `.env` file (the same file `hbbs`/`hbbr` already load from their working directory on startup) — printing the plaintext token once. `rustdesk-utils hashtoken <token>` remains available if you'd rather choose the plaintext token yourself.
 - No existing RustDesk protocol messages, wire formats, or database schema were changed — this fork is strictly additive.
 - Audit log entries are written for admin API logins and device-list queries.
 
@@ -30,8 +30,10 @@ This repository is a **private fork of the official [rustdesk/rustdesk-server](h
 ```bash
 curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
 mv docker-compose.example.yml docker-compose.yml
-# edit docker-compose.yml: set the hbbs command's -r <host> address, plus ADMIN_API_TOKEN_HASH / ADMIN_API_JWT_SECRET (see comments in the file)
+# edit docker-compose.yml: set the hbbs command's -r <host> address
 docker compose up -d
+docker compose run --rm --no-deps hbbs rustdesk-utils initadmin   # generates & prints the admin token
+docker compose restart hbbs hbbr
 ```
 See **[docs/ADMIN_PRESENCE_DEVELOPMENT.md § Production release packages](docs/ADMIN_PRESENCE_DEVELOPMENT.md#production-release-packages-recommended--no-local-build-required)** for the full walkthrough of all three package types (Docker Compose, plain `docker run`, `.deb` + systemd) including architecture selection, admin-token setup without any local Rust install, verification, and upgrade steps — or grab packages directly from the **[Releases page](https://github.com/hrezenmsft/rustdeskadmin-server/releases)**.
 
@@ -44,8 +46,9 @@ git remote add upstream https://github.com/rustdesk/rustdesk-server.git
 git remote set-url --push upstream DISABLED
 git submodule update --init --recursive
 cargo build --release
-./target/release/rustdesk-utils hashtoken '<your-long-random-admin-token>'
-# Set ADMIN_API_TOKEN_HASH / ADMIN_API_JWT_SECRET / ADMIN_API_PORT, then run hbbs/hbbr as usual.
+./target/release/rustdesk-utils initadmin
+# Prints the plaintext admin token once and writes ADMIN_API_TOKEN_HASH / ADMIN_API_JWT_SECRET
+# into ./.env (loaded automatically by hbbs/hbbr on startup), then run hbbs/hbbr as usual.
 ```
 
 Upstream project: **[rustdesk/rustdesk-server](https://github.com/rustdesk/rustdesk-server)** — this fork tracks it read-only via the `upstream` remote (push disabled) and only adds the administrator presence API described above; it does not otherwise change RustDesk's rendezvous/relay protocol or security model.

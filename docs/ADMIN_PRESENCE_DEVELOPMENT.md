@@ -32,7 +32,7 @@ Expose `GET /admin/v1/devices?status=online` only to authorized administrators. 
 - Added `GET /admin/v1/devices?status=online` and `POST /admin/v1/auth/login` on the separate API port `21114` (override with `ADMIN_API_PORT`).
 - The API is disabled unless `ADMIN_API_TOKEN_HASH` is configured. Login verifies the bcrypt hash and returns a 15-minute JWT signed with `ADMIN_API_JWT_SECRET` (an ephemeral secret is used if the optional setting is omitted).
 - Device enumeration reads only the live in-memory `PeerMap`, applies the existing 30-second rendezvous registration timeout, returns device ID, optional device name when known, and last-seen seconds, and writes audit events to the server log.
-- `rustdesk-utils hashtoken <token>` generates the bcrypt value needed for `ADMIN_API_TOKEN_HASH`. No existing RustDesk protocol messages or database schema were changed.
+- `rustdesk-utils hashtoken <token>` generates the bcrypt value needed for `ADMIN_API_TOKEN_HASH` for a token you already chose yourself. `rustdesk-utils initadmin [env-file] [--force]` is the recommended path for new deployments: it generates a fresh random admin token *and* `ADMIN_API_JWT_SECRET`, bcrypt-hashes the token, and writes both into a `.env` file (default `.env` in the current directory — the same file `hbbs`/`hbbr` already load from their working directory on startup, see `src/common.rs::init_args`), printing the plaintext token once. No existing RustDesk protocol messages or database schema were changed.
 - Deployment validation installed the new `hbbs` binary in the private lab, enabled the API on port `21114`, verified missing/invalid tokens are rejected, verified unsupported status filters are rejected, and confirmed a test endpoint appears/disappears with the rendezvous registration timeout.
 
 ### Internet Exposure Guidance
@@ -63,7 +63,7 @@ Expose `GET /admin/v1/devices?status=online` only to authorized administrators. 
   - Produces `target/release/hbbs`, `target/release/hbbr`, and `target/release/rustdesk-utils`.
   - A clean release build takes roughly 15–20 minutes on a single vCPU; expect longer on constrained hardware. If you hit memory-pressure build failures, retry with `CARGO_BUILD_JOBS=1`.
 - Run the test suite (no admin-presence-specific test crate yet; validate via `cargo check --tests` plus the manual API checks below): `cargo check --tests`
-- Generate the bcrypt hash for your admin token (needed before the admin API will start): `./target/release/rustdesk-utils hashtoken <your-token>`
+- Configure the admin token + JWT secret (needed before the admin API will start): `./target/release/rustdesk-utils initadmin` — generates both, bcrypt-hashes the token, and writes `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` into `./.env`, printing the plaintext token once. Or `./target/release/rustdesk-utils hashtoken <your-own-token>` if you'd rather choose the plaintext token yourself (you then set `ADMIN_API_TOKEN_HASH` manually).
 
 ## How to Deploy
 
@@ -110,15 +110,23 @@ mv docker-compose.example.yml docker-compose.yml
 ```
 Edit `docker-compose.yml` before starting it:
 1. Set the `-r` argument in the `hbbs` service's `command:` (e.g. `hbbs -r your-server-public-ip-or-hostname:21117`) to your server's public IP or hostname — this is what clients are told to use for the relay connection, and it must be reachable by every client, not just the server itself.
-2. Set `ADMIN_API_TOKEN_HASH` to the bcrypt hash of a long random admin token (see "Generating the admin token hash from a container, without installing Rust" below — you do **not** need a local build for this either). Remember every literal `$` inside the bcrypt hash must be escaped as `$$` in this file, or Compose will try to interpret it as variable interpolation and corrupt the hash.
-3. Set `ADMIN_API_JWT_SECRET` to a separate long random value (used to sign short-lived admin session JWTs; if omitted, a new one is generated on every container restart, invalidating all admin sessions each time).
-4. If you are replacing an existing server real clients already trust, follow the "migrating an existing keypair" comment block inside the file **before** the first `docker compose up` — otherwise a fresh keypair is generated and every client will show a "server key changed" warning on next connect.
+2. If you are replacing an existing server real clients already trust, follow the "migrating an existing keypair" comment block inside the file **before** the first `docker compose up` — otherwise a fresh keypair is generated and every client will show a "server key changed" warning on next connect.
 
 ```bash
 docker compose pull
 docker compose up -d
 docker compose ps                 # both hbbs and hbbr should show "running"/"healthy"
+```
+Then generate the admin token and JWT secret (a one-time step, or repeat with `--force` to rotate them later):
+```bash
+docker compose run --rm --no-deps hbbs rustdesk-utils initadmin
+docker compose restart hbbs hbbr
+```
+This writes `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` into `./data/.env` (which `hbbs`/`hbbr` already load from their working directory on every start — see `src/common.rs::init_args`) and prints the plaintext admin token to the terminal **once** — save it now, it cannot be recovered later, only its bcrypt hash is stored. No hand-editing of `docker-compose.yml`, and no `$`-escaping of the bcrypt hash, is needed.
+```bash
 docker compose logs -f hbbs        # watch for client registrations (update_pk) and admin API startup log line
+curl -X POST http://localhost:21114/admin/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"token":"<the plaintext admin token initadmin printed>"}'   # should return a JWT
 ```
 See the comments inside `docker-compose.example.yml` for the bridge-networking alternative (host networking, used by default, is strongly recommended for NAT traversal — see Option B below for why).
 
@@ -133,13 +141,26 @@ The named volume (and the keypair/database inside it) is untouched by an image u
 ```bash
 docker volume create rustdesk-data
 docker run -d --name rustdeskadmin-hbbs --network host --restart unless-stopped \
-  -v rustdesk-data:/data \
-  -e ADMIN_API_TOKEN_HASH='<bcrypt hash>' -e ADMIN_API_JWT_SECRET='<random secret>' -e ADMIN_API_PORT=21114 \
+  -v rustdesk-data:/root \
   ghcr.io/hrezenmsft/rustdeskadmin-server:latest /usr/bin/hbbs -r your-server-hostname
 docker run -d --name rustdeskadmin-hbbr --network host --restart unless-stopped \
-  -v rustdesk-data:/data \
+  -v rustdesk-data:/root \
   ghcr.io/hrezenmsft/rustdeskadmin-server:latest /usr/bin/hbbr
 ```
+> The classic image's `WORKDIR`/`HOME` is `/root` (see `docker-classic/Dockerfile`), so the named
+> volume must be mounted at `/root`, not `/data` — mounting anywhere else means the keypair/database
+> (and the `.env` file used below) won't actually persist across container recreation.
+
+Generate the admin token and JWT secret (one-time, or repeat with `--force` to rotate them later):
+```bash
+docker run --rm -v rustdesk-data:/root ghcr.io/hrezenmsft/rustdeskadmin-server:latest \
+  /usr/bin/rustdesk-utils initadmin
+docker restart rustdeskadmin-hbbs rustdeskadmin-hbbr
+```
+This writes `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` into `/root/.env` inside the volume (loaded
+automatically by `hbbs`/`hbbr` on startup — see `src/common.rs::init_args`) and prints the plaintext
+admin token to the terminal **once** — save it now, it cannot be recovered later.
+
 Verify both containers stay up and check logs the same way as Compose above:
 ```bash
 docker ps --filter name=rustdeskadmin
@@ -149,7 +170,7 @@ docker logs -f rustdeskadmin-hbbs
 ```bash
 docker pull ghcr.io/hrezenmsft/rustdeskadmin-server:latest
 docker stop rustdeskadmin-hbbs rustdeskadmin-hbbr && docker rm rustdeskadmin-hbbs rustdeskadmin-hbbr
-# re-run the two `docker run` commands above — the named volume persists the keypair/database
+# re-run the two `docker run` commands above — the named volume persists the keypair/database/.env
 ```
 
 #### Deploy via `.deb` package on a VM (systemd, no Rust toolchain needed)
@@ -164,22 +185,11 @@ wget "https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/${TAG
 wget "https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/${TAG}/rustdesk-server-utils_${VERSION}_${ARCH}.deb"
 sudo apt install ./rustdesk-server-hbbs_*_${ARCH}.deb ./rustdesk-server-hbbr_*_${ARCH}.deb ./rustdesk-server-utils_*_${ARCH}.deb
 ```
-Generate the admin token hash using the just-installed `rustdesk-utils` binary (no build required — the `.deb` already put it on `PATH`):
+Generate the admin token and JWT secret using the just-installed `rustdesk-utils` binary (no build required — the `.deb` already put it on `PATH`), writing directly into the systemd unit's working directory so `hbbs`/`hbbr` pick it up automatically on next start:
 ```bash
-rustdesk-utils hashtoken '<your-long-random-admin-token>'
+sudo -u rustdesk rustdesk-utils initadmin /var/lib/rustdesk-server/.env
 ```
-Configure the admin-presence environment variables as a systemd drop-in override, so the shipped unit file is never hand-edited:
-```bash
-sudo systemctl edit rustdesk-hbbs
-```
-Add in the editor that opens:
-```ini
-[Service]
-Environment=ADMIN_API_TOKEN_HASH=<bcrypt hash from the previous step>
-Environment=ADMIN_API_JWT_SECRET=<a separate long random secret>
-Environment=ADMIN_API_PORT=21114
-```
-Then enable, start, and open the firewall the same as in Option A steps 7–9 below:
+This prints the plaintext admin token to the terminal **once** — save it now, it cannot be recovered later, only its bcrypt hash is stored (in `/var/lib/rustdesk-server/.env`, which both units already load from their `WorkingDirectory` on startup — see `src/common.rs::init_args`). Re-running it later refuses to overwrite an already-configured token unless you add `--force` (which invalidates the old token for every already-configured admin client). No systemd drop-in or hand-edited environment variables are needed:
 ```bash
 sudo ufw allow 21115:21119/tcp
 sudo ufw allow 21116/udp
@@ -188,18 +198,23 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now rustdesk-hbbs rustdesk-hbbr
 sudo systemctl status rustdesk-hbbs rustdesk-hbbr
 curl -X POST http://localhost:21114/admin/v1/auth/login -H 'Content-Type: application/json' \
-  -d '{"token":"<your-plaintext-admin-token>"}'   # should return a JWT
+  -d '{"token":"<the plaintext admin token initadmin printed>"}'   # should return a JWT
 ```
-**Upgrading:** download the new `.deb` files for the newer tag and re-run `sudo apt install ./rustdesk-server-*_${ARCH}.deb` (apt upgrades in place); your systemd drop-in override and `/var/lib/rustdesk-server/` data are untouched. Restart both services afterward: `sudo systemctl restart rustdesk-hbbs rustdesk-hbbr`.
+**Upgrading:** download the new `.deb` files for the newer tag and re-run `sudo apt install ./rustdesk-server-*_${ARCH}.deb` (apt upgrades in place); `/var/lib/rustdesk-server/.env` (and the rest of `/var/lib/rustdesk-server/`) is untouched. Restart both services afterward: `sudo systemctl restart rustdesk-hbbs rustdesk-hbbr`.
 
 This `.deb` path is functionally equivalent to Option A below, but skips the Rust toolchain install and the ~15–20 minute local build entirely.
 
-#### Generating the admin token hash from a container, without installing Rust
-If you are deploying entirely from prebuilt packages and don't want to install any Rust toolchain even temporarily, generate the bcrypt hash using the already-built `rustdesk-utils` inside the Docker image itself instead of building it locally:
+#### Generating the admin token and JWT secret from a container, without installing Rust
+If you are deploying entirely from prebuilt packages and don't want to install any Rust toolchain even temporarily, run `rustdesk-utils initadmin` using the already-built binary inside the Docker image itself instead of building it locally:
 ```bash
-docker run --rm --entrypoint /usr/bin/rustdesk-utils \
-  ghcr.io/hrezenmsft/rustdeskadmin-server:latest hashtoken '<your-long-random-admin-token>'
+docker run --rm -v rustdesk-data:/root --entrypoint /usr/bin/rustdesk-utils \
+  ghcr.io/hrezenmsft/rustdeskadmin-server:latest initadmin
 ```
+This writes `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` straight into `/root/.env` inside the same
+named volume `hbbs`/`hbbr` use, and prints the plaintext admin token once — no separate `hashtoken` +
+hand-edited config step needed. (`rustdesk-utils hashtoken '<token>'` still exists if you'd rather
+choose your own plaintext token instead of a randomly generated one; you'd need to append the
+resulting `ADMIN_API_TOKEN_HASH=...` line into the target `.env` file yourself in that case.)
 
 ### Option A: Ubuntu Server VM with systemd (build from source)
 
@@ -228,29 +243,27 @@ This is the recommended path for a private lab or a small production deployment 
    sudo mkdir -p /var/lib/rustdesk-server /var/log/rustdesk-server
    sudo chown -R rustdesk:rustdesk /var/lib/rustdesk-server /var/log/rustdesk-server
    ```
-5. **Generate the admin token hash** before enabling the API (replace the token with a long random value of your own, and keep the plaintext token only in your password manager/client settings, never in the repo):
+5. **Generate the admin token and JWT secret** before enabling the API:
    ```bash
-   /usr/bin/rustdesk-utils hashtoken '<your-long-random-admin-token>'
+   sudo -u rustdesk /usr/bin/rustdesk-utils initadmin /var/lib/rustdesk-server/.env
    ```
-6. **Install the systemd units** from this repo's `systemd/rustdesk-hbbs.service` and `systemd/rustdesk-hbbr.service`, filling in the blank `User=`/`Group=` fields and adding the admin-presence environment variables to the `hbbs` unit:
+   This writes `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` directly into `/var/lib/rustdesk-server/.env`
+   (loaded automatically by `hbbs`/`hbbr` from their systemd `WorkingDirectory` on every start — see
+   `src/common.rs::init_args`), and prints the plaintext admin token to the terminal **once**. Save it
+   now — only its bcrypt hash is stored, it cannot be recovered later. Keep it in your password
+   manager/client settings, never in the repo. Re-running this command later refuses to overwrite an
+   already-configured token unless you add `--force`.
+6. **Install the systemd units** from this repo's `systemd/rustdesk-hbbs.service` and `systemd/rustdesk-hbbr.service`, filling in the blank `User=`/`Group=` fields:
    ```bash
    sudo cp systemd/rustdesk-hbbs.service /etc/systemd/system/rustdesk-hbbs.service
    sudo cp systemd/rustdesk-hbbr.service /etc/systemd/system/rustdesk-hbbr.service
    sudo sed -i 's/^User=$/User=rustdesk/; s/^Group=$/Group=rustdesk/' \
      /etc/systemd/system/rustdesk-hbbs.service /etc/systemd/system/rustdesk-hbbr.service
-   sudo systemctl edit rustdesk-hbbs.service
    ```
-   In the editor opened by `systemctl edit` (this creates a drop-in override so you never have to hand-edit the shipped unit file), add:
-   ```ini
-   [Service]
-   Environment=ADMIN_API_TOKEN_HASH=<bcrypt hash from step 5>
-   Environment=ADMIN_API_JWT_SECRET=<a separate stable random secret>
-   Environment=ADMIN_API_PORT=21114
-   ```
-   - `ADMIN_API_TOKEN_HASH` — required; the admin API stays disabled (fail-closed) until this is set.
-   - `ADMIN_API_JWT_SECRET` — strongly recommended; if omitted, an ephemeral secret is generated at every `hbbs` startup, which invalidates existing admin sessions on every restart and can't be shared across multiple instances behind a load balancer.
-   - `ADMIN_API_PORT` — optional, defaults to `21114`.
-   - See `docs/environment-variables.md` for the full list of non-admin-presence server environment variables (relay/key settings, etc.).
+   No `systemctl edit` drop-in or hand-typed environment variables are needed — both units already run
+   with `WorkingDirectory=/var/lib/rustdesk-server/`, so the `.env` file written in step 5 is picked up
+   automatically. See `docs/environment-variables.md` for the full list of non-admin-presence server
+   environment variables (relay/key settings, etc.) if you need to set any of those too.
 7. **Open firewall ports** for the rendezvous/relay service plus the admin API:
    ```bash
    sudo ufw allow 21115:21119/tcp
@@ -300,23 +313,15 @@ This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-
    EXPOSE 21115 21116 21116/udp 21117 21118 21119 21114
    ENTRYPOINT ["/usr/local/bin/hbbs"]
    ```
-2. **Generate the admin token hash on the build host** (or in a throwaway container) before writing your compose file/env file, so the plaintext token is never baked into the image or committed:
-   ```bash
-   docker run --rm -v "$PWD":/src -w /src rust:1-bookworm \
-     bash -c "cargo build --release --bin rustdesk-utils && ./target/release/rustdesk-utils hashtoken '<your-long-random-admin-token>'"
-   ```
-3. **Build the image** from the repo root (run from the same directory as step 1's Dockerfile, adjusting `-f` if you placed it in a subfolder):
+2. **Build the image** from the repo root (run from the same directory as step 1's Dockerfile, adjusting `-f` if you placed it in a subfolder):
    ```bash
    docker build -t rustdesk-hbbs-admin -f docker-admin/Dockerfile .
    ```
-4. **Run `hbbs` and `hbbr` using host networking (recommended).** RustDesk's NAT traversal (UDP hole-punching between two clients) depends on `hbbs` seeing each client's real source port. Docker's default bridge networking rewrites/DNATs that port, which can break traversal for some client pairs; `--network host` avoids this entirely and matches how the systemd deployment behaves. Host networking requires a native Linux Docker engine (this is what the Ubuntu Server VM in Option A provides) — it is not available through Docker Desktop on Windows/macOS.
+3. **Run `hbbs` and `hbbr` using host networking (recommended).** RustDesk's NAT traversal (UDP hole-punching between two clients) depends on `hbbs` seeing each client's real source port. Docker's default bridge networking rewrites/DNATs that port, which can break traversal for some client pairs; `--network host` avoids this entirely and matches how the systemd deployment behaves. Host networking requires a native Linux Docker engine (this is what the Ubuntu Server VM in Option A provides) — it is not available through Docker Desktop on Windows/macOS.
    ```bash
    docker volume create rustdesk-data
    docker run -d --name rustdesk-hbbs --network host \
      -v rustdesk-data:/data \
-     -e ADMIN_API_TOKEN_HASH='<bcrypt hash from step 2>' \
-     -e ADMIN_API_JWT_SECRET='<a separate stable random secret>' \
-     -e ADMIN_API_PORT=21114 \
      --restart unless-stopped \
      rustdesk-hbbs-admin
 
@@ -334,9 +339,6 @@ This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-
    docker run -d --name rustdesk-hbbs --network rustdesk-net \
      -p 21115-21119:21115-21119 -p 21116:21116/udp -p 21114:21114 \
      -v rustdesk-data:/data \
-     -e ADMIN_API_TOKEN_HASH='<bcrypt hash from step 2>' \
-     -e ADMIN_API_JWT_SECRET='<a separate stable random secret>' \
-     -e ADMIN_API_PORT=21114 \
      --restart unless-stopped \
      rustdesk-hbbs-admin
 
@@ -346,7 +348,7 @@ This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-
      --entrypoint /usr/local/bin/hbbr \
      rustdesk-hbbs-admin
    ```
-5. **Or use `docker-compose.yml`.** Host networking (recommended):
+4. **Or use `docker-compose.yml`.** Host networking (recommended):
    ```yaml
    services:
      hbbs:
@@ -357,10 +359,6 @@ This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-
        network_mode: host
        volumes:
          - rustdesk-data:/data
-       environment:
-         ADMIN_API_TOKEN_HASH: "<bcrypt hash from step 2>"
-         ADMIN_API_JWT_SECRET: "<a separate stable random secret>"
-         ADMIN_API_PORT: "21114"
        restart: unless-stopped
      hbbr:
        image: rustdesk-hbbs-admin
@@ -374,16 +372,26 @@ This repository ships two upstream Dockerfiles (`docker/Dockerfile` and `docker-
    ```
    `network_mode: host` and `ports:` are mutually exclusive in Compose; if you fall back to bridge networking, remove `network_mode: host` and add the `ports:` list shown in the bridge example above instead.
 
-   **Escaping the bcrypt hash in `docker-compose.yml`:** Compose treats `$` as the start of a variable-substitution token even inside quoted scalar values. A bcrypt hash (e.g. `$2b$12$...`) written literally into `ADMIN_API_TOKEN_HASH` will have each `$x` sequence silently interpreted (and usually stripped) as an undefined variable reference, corrupting the hash so no plaintext token will ever validate against it. Double every literal `$` as `$$` in the compose file (e.g. `$$2b$$12$$...`), or place the raw single-`$` value in a `.env` file referenced via `env_file:` instead, where no substitution is performed.
+5. **Generate the admin token and JWT secret**, after the containers exist (image built, volume created), instead of hand-editing `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` env vars into the `docker run`/Compose commands above (which would otherwise need every literal `$` in the bcrypt hash escaped as `$$` in Compose — `initadmin` avoids that entirely by writing straight into the same volume as a `.env` file):
+   ```bash
+   docker run --rm -v rustdesk-data:/data --entrypoint /usr/local/bin/rustdesk-utils \
+     rustdesk-hbbs-admin initadmin /data/.env
+   docker restart rustdesk-hbbs rustdesk-hbbr   # or: docker compose restart hbbs hbbr
+   ```
+   This writes `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` into `/data/.env` inside the volume (loaded
+   automatically by `hbbs`/`hbbr` from their `/data` working directory on every start — see
+   `src/common.rs::init_args`) and prints the plaintext admin token to the terminal **once** — save it
+   now, it cannot be recovered later. Re-running it later refuses to overwrite an already-configured
+   token unless you add `--force`.
 
 6. **Verify the deployment:**
    ```bash
    docker ps                       # confirm both containers are Up
    docker logs -f rustdesk-hbbs    # watch for client registrations
    curl -X POST http://localhost:21114/admin/v1/auth/login \
-     -H 'Content-Type: application/json' -d '{"token":"<your-plaintext-admin-token>"}'
+     -H 'Content-Type: application/json' -d '{"token":"<the plaintext admin token initadmin printed>"}'
    ```
-7. **Upgrading:** rebuild the image (`docker build`/`docker compose build`) and recreate the containers (`docker compose up -d` or `docker stop && docker rm && docker run` again) — the named `rustdesk-data` volume persists the keypair/database across recreation.
+7. **Upgrading:** rebuild the image (`docker build`/`docker compose build`) and recreate the containers (`docker compose up -d` or `docker stop && docker rm && docker run` again) — the named `rustdesk-data` volume persists the keypair/database/`.env` across recreation.
 
 Persist the `/data` volume across restarts so the server keypair and any embedded SQLite database are not regenerated/lost. As with the systemd path, keep the admin API behind HTTPS termination and network-layer restrictions (firewall/VPN, avoid publishing port `21114` directly to `0.0.0.0` on an internet-facing host) before exposing it publicly — see "Internet Exposure Guidance" above.
 

@@ -4,6 +4,24 @@ All notable changes to this custom administrator-presence server extension are r
 
 Entries are grouped by date, newest first. Each dated section corresponds to one or more commits on that date; the `Unreleased` section at the top holds changes not yet committed.
 
+## 2026-09-07 17:20 (`06dea1e`, released `v1.1.4`)
+
+### Fixed
+
+- Fixed `docker-classic/Dockerfile` (the minimal `FROM scratch` "classic" GHCR image, `ghcr.io/hrezenmsft/rustdeskadmin-server`) never copying `rustdesk-utils` into the image — it only did `COPY hbbs ...`/`COPY hbbr ...`, even though `.github/workflows/build.yaml`'s `docker-classic` job already downloads the full `binaries-linux-*` artifact (which includes `rustdesk-utils`) into that build context directory. This meant `docker run`/`docker compose run ... rustdesk-utils ...` failed with "no such file or directory" against every published classic-image tag, including the just-fixed two-container `docker-compose.example.yml` topology from the `v1.1.3` entry below. Added `COPY rustdesk-utils /usr/bin/rustdesk-utils`. (The `-s6` image was already unaffected — its `docker/Dockerfile` does `COPY rootfs /` after CI downloads all three binaries into `docker/rootfs/usr/bin/`.)
+- Fixed the "Deploy via plain `docker run`" instructions in `docs/ADMIN_PRESENCE_DEVELOPMENT.md`, which mounted the named volume at `/data` while the classic image's actual `WORKDIR`/`HOME` is `/root` (see `docker-classic/Dockerfile`) — meaning the server's keypair/database (and now its `.env` file) were never actually persisted by that example, silently, since the mismatch meant hbbs/hbbr always wrote to the container's ephemeral `/root` instead of the mounted volume. Corrected the mount to `/root` in that section only (the separate custom-Dockerfile-based "Option B" path already correctly used `/data`, matching its own `WORKDIR /data`).
+
+### Added
+
+- Added a new `rustdesk-utils initadmin [env-file] [--force]` subcommand (`src/utils.rs`) that generates a fresh 256-bit random admin token and a separate 256-bit random `ADMIN_API_JWT_SECRET` (both hex-encoded via `sodiumoxide::randombytes::randombytes(32)`, avoiding any `$`/quoting escaping concerns in any downstream context), bcrypt-hashes the token, and merges both `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` key=value lines into a `.env` file (default `.env` in the current directory) while preserving every other existing line — the same `.env` file `hbbs`/`hbbr` already load from their working directory on every start (`src/common.rs::init_args`, pre-existing mechanism, no changes needed there). Prints the plaintext admin token to the terminal once, with a warning that it cannot be recovered later. Refuses to overwrite an already-configured `ADMIN_API_TOKEN_HASH` unless `--force` is passed, to avoid silently invalidating an already-distributed admin token. On Unix, chmods the written file to `0600`. This replaces the previous "generate the hash yourself with `hashtoken`, then hand-edit Compose/systemd env vars (and escape every `$`)" flow with a single command for every deployment path (Compose, plain `docker run`, `.deb`+systemd, and building from source); `hashtoken` remains available for anyone who wants to choose their own plaintext token instead of a randomly generated one.
+
+### Changed
+
+- Reworked `docker-compose.example.yml` to no longer set `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` under `environment:` (which required escaping every `$` in the bcrypt hash as `$$`); replaced with a comment directing users to run `docker compose run --rm --no-deps hbbs rustdesk-utils initadmin` once (writes into the already-mounted `./data:/root` volume) followed by `docker compose restart hbbs hbbr`.
+- Updated every deployment path in `docs/ADMIN_PRESENCE_DEVELOPMENT.md` (Docker Compose, plain `docker run`, `.deb`+systemd, custom-Dockerfile "Option B", and building from source) to use `rustdesk-utils initadmin` instead of the old manual `hashtoken` + hand-edited env var flow, including removing the now-obsolete "escaping the bcrypt hash in `docker-compose.yml`" warning from the Option B section (still noted briefly where the old `-e`/`environment:` flow is contrasted with the new one).
+- Updated `README.md`'s quick-start snippets (Docker Compose and from-source) and fork-description bullet list to reference `rustdesk-utils initadmin`.
+- Updated `docs/ADMIN_PRESENCE_AI_HANDOFF.md`'s systemd/Docker deployment steps, file-purpose table, and example admin-token section to reference `rustdesk-utils initadmin` alongside the still-available `hashtoken`.
+
 ## 2026-09-07 16:05 (`a78667a`, released `v1.1.3`)
 
 ### Fixed

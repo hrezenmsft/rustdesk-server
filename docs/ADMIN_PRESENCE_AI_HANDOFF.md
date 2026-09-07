@@ -133,7 +133,7 @@ Server (systemd):
 1. `cargo build --release` on the Linux build machine.
 2. Copy `target/release/{hbbs,hbbr,rustdesk-utils}` to the target host.
 3. Install as `rustdesk-hbbs`/`rustdesk-hbbr` systemd services using the repo's `systemd/` templates.
-4. Set `ADMIN_API_TOKEN_HASH`, `ADMIN_API_JWT_SECRET`, and optionally `ADMIN_API_PORT` as service environment variables.
+4. Set the admin token/JWT secret: `rustdesk-utils initadmin /var/lib/rustdesk-server/.env` (writes `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET` into the `.env` file both systemd units already load from their `WorkingDirectory`, printing the plaintext token once) — or set `ADMIN_API_TOKEN_HASH`/`ADMIN_API_JWT_SECRET`/`ADMIN_API_PORT` as service environment variables by hand instead.
 5. Open firewall ports for the rendezvous/relay ports plus the admin API port (`21114` by default).
 
 Server (Docker): this repo's shipped `docker/Dockerfile` and `docker-classic/Dockerfile` both expect prebuilt `hbbs`/`hbbr` binaries already present in the build context (normally populated by CI). To build a self-contained image from source instead, use a small multi-stage Dockerfile:
@@ -164,14 +164,16 @@ docker build -t rustdesk-hbbs-admin .
 docker volume create rustdesk-data
 docker run -d --name rustdesk-hbbs --network host \
   -v rustdesk-data:/data \
-  -e ADMIN_API_TOKEN_HASH='<bcrypt hash from rustdesk-utils hashtoken>' \
-  -e ADMIN_API_JWT_SECRET='<a stable random secret>' \
   rustdesk-hbbs-admin
 
 docker run -d --name rustdesk-hbbr --network host \
   -v rustdesk-data:/data \
   --entrypoint /usr/local/bin/hbbr \
   rustdesk-hbbs-admin
+
+docker run --rm -v rustdesk-data:/data --entrypoint /usr/local/bin/rustdesk-utils \
+  rustdesk-hbbs-admin initadmin /data/.env   # generates & prints the admin token, writes ADMIN_API_TOKEN_HASH/ADMIN_API_JWT_SECRET into /data/.env
+docker restart rustdesk-hbbs rustdesk-hbbr
 ```
 
 Prefer `--network host` (Linux Docker hosts only) over published/bridge ports: RustDesk's UDP hole-punching relies on `hbbs` seeing each client's real source port, and Docker's bridge NAT can rewrite it, degrading traversal reliability. If host networking isn't available (e.g. Docker Desktop on Windows/macOS), fall back to `-p 21115-21119:21115-21119 -p 21116:21116/udp -p 21114:21114` on a bridge network and validate connectivity between two real clients before relying on it in production. Persist the `/data` volume across restarts so the server keypair isn't regenerated.
@@ -190,7 +192,7 @@ Important files:
 | `src/peer.rs` | Adds `OnlineDevice` and `PeerMap::list_online()`. |
 | `src/rendezvous_server.rs` | Starts the admin API task beside the existing rendezvous server. |
 | `src/lib.rs` | Registers the admin API module. |
-| `src/utils.rs` | Adds `rustdesk-utils hashtoken <token>`. |
+| `src/utils.rs` | Adds `rustdesk-utils hashtoken <token>` and `rustdesk-utils initadmin [env-file] [--force]` (generates + configures both the admin token and JWT secret in one step). |
 
 ### Server API
 
@@ -256,7 +258,13 @@ Implemented protections:
 - Login and device-list attempts are audit-logged.
 - Existing RustDesk protocol messages are not changed.
 
-Generate a server-side hash:
+Recommended: generate and configure both values in one step:
+
+```bash
+./rustdesk-utils initadmin
+```
+
+Or generate just the bcrypt hash for a token you already chose yourself:
 
 ```bash
 ./rustdesk-utils hashtoken '<long-random-admin-token>'

@@ -25,16 +25,18 @@
 # ports already held by the first. The s6 image is meant to be run as a single
 # all-in-one container instead (`docker run` one instance, no `command:` override).
 #
-# Generate ADMIN_API_TOKEN_HASH (a bcrypt hash of your chosen admin token) with, e.g.:
-#   docker run --rm -it python:3.12-slim bash -c "pip install bcrypt -q && python3 -c \"
-#   import bcrypt, getpass
-#   pw = getpass.getpass('Admin token (plaintext): ').encode()
-#   print(bcrypt.hashpw(pw, bcrypt.gensalt()).decode())
-#   \""
-# Save the plaintext token somewhere safe — it cannot be recovered from the hash.
-#
-# IMPORTANT: every literal `$` in the bcrypt hash must be written as `$$` below,
-# otherwise Compose's variable substitution will silently corrupt it.
+# Admin token / JWT secret setup: don't hand-edit ADMIN_API_TOKEN_HASH/ADMIN_API_JWT_SECRET
+# into this file's `environment:` block — every literal `$` in a bcrypt hash would need to
+# be escaped as `$$` for Compose, which is easy to get wrong. Instead, after the first
+# `docker compose up -d` (or even before, once the images exist), run:
+#   docker compose run --rm --no-deps hbbs rustdesk-utils initadmin
+# This generates a fresh admin token + JWT secret, prints the plaintext token ONCE (save it —
+# it cannot be recovered later), and writes ADMIN_API_TOKEN_HASH/ADMIN_API_JWT_SECRET into
+# ./data/.env (mounted below as /root/.env, which hbbs/hbbr already load from their working
+# directory on every start — see src/common.rs::init_args). Then run
+# `docker compose restart hbbs hbbr` to load it. Re-running `initadmin` refuses to overwrite an
+# already-configured token unless you pass `--force` (which invalidates the old token for every
+# already-configured admin client).
 
 networks:
   rustdesk-net:
@@ -54,10 +56,9 @@ services:
                         # never expose directly to the public internet.
     volumes:
       - ./data:/root
-    environment:
-      ADMIN_API_TOKEN_HASH: "<bcrypt hash, with every $ doubled as $$>"
-      ADMIN_API_JWT_SECRET: "<a separate long random secret, keep stable across restarts>"
-      ADMIN_API_PORT: "21114"
+    # No ADMIN_API_TOKEN_HASH/ADMIN_API_JWT_SECRET here — see the "Admin token / JWT secret
+    # setup" note above. `docker compose run --rm --no-deps hbbs rustdesk-utils initadmin`
+    # writes them into ./data/.env instead, which hbbs loads automatically on startup.
     networks:
       - rustdesk-net
     depends_on:
