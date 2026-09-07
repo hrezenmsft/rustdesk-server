@@ -334,9 +334,16 @@ jobs:
 
       # GHCR manifests (Docker Hub manifests removed for this fork)
       # manifest for :1.2.3 tag
+      # NOTE: upstream skipped this on `workflow_dispatch` (to avoid an accidental
+      # manual rerun overwriting a version tag with stale content). This fork
+      # relies on `workflow_dispatch` (dispatched against the release tag's ref)
+      # as the standing workaround for GitHub's fork-repository restriction on
+      # automatic tag-push-triggered workflow runs (see docs/ADMIN_PRESENCE_CHANGELOG.md),
+      # so skipping here means the exact-version manifest (e.g. :v1.1.2) never
+      # gets created — only the :v1 (major) and :latest manifests would exist.
+      # Always create/push it for this fork.
       - name: Create and push GHCR manifest (:ve.rs.ion)
         uses: Noelware/docker-manifest-action@0.4.3
-        if: github.event_name != 'workflow_dispatch'
         with:
           base-image: ${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}
           extra-images: ${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-amd64,${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-arm64v8,${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-armv7,${{ env.GHCR_IMAGE }}:${{ env.GIT_TAG }}-i386
@@ -471,9 +478,11 @@ jobs:
 
       # GHCR manifests (Docker Hub manifests removed for this fork)
       # manifest for :1.2.3 tag
+      # NOTE: see the identical comment in the `docker-manifest` job above — this
+      # fork always dispatches via `workflow_dispatch`, so the upstream
+      # `if: github.event_name != 'workflow_dispatch'` guard is removed here too.
       - name: Create and push GHCR manifest (:ve.rs.ion)
         uses: Noelware/docker-manifest-action@0.4.3
-        if: github.event_name != 'workflow_dispatch'
         with:
           base-image: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}
           extra-images: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}-amd64,${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}-arm64v8,${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}-armv7

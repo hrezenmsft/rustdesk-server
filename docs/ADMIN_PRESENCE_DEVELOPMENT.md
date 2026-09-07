@@ -75,10 +75,12 @@ Each tagged release publishes:
 - **Linux binaries** (`hbbs`, `hbbr`, `rustdesk-utils`), zipped per architecture: `rustdesk-server-linux-{amd64,arm64v8,armv7,i386}.zip` — attached to the GitHub release.
 - **Debian packages** (`.deb`) per architecture — `rustdesk-server-hbbs_*.deb`, `rustdesk-server-hbbr_*.deb`, `rustdesk-server-utils_*.deb` — also attached to the release, installable via `apt install ./<file>.deb` and wired up with the repo's own `systemd/` unit files automatically.
 - **Docker images**, published to GHCR (public, no login needed to pull):
-  - `ghcr.io/hrezenmsft/rustdeskadmin-server-s6:<version>` / `:latest` — s6-overlay based image (recommended; handles service supervision and healthchecks for you). Multi-arch manifest covers amd64/arm64/armv7/i386.
-  - `ghcr.io/hrezenmsft/rustdeskadmin-server:<version>` / `:latest` — "classic" minimal `FROM scratch` image (just the two binaries; you control the entrypoint/command yourself). Multi-arch manifest covers amd64/arm64/armv7.
+  - `ghcr.io/hrezenmsft/rustdeskadmin-server:<version>` / `:latest` — "classic" minimal `FROM scratch` image, just the `hbbs`/`hbbr` binaries with no process supervisor. **This is the image the Docker Compose/`docker run` instructions below use** — one container per binary, exactly like the official upstream RustDesk deployment pattern (see the plain `docker-compose.yml` at the repo root, which uses the same pattern against the official `rustdesk/rustdesk-server:latest` image). Multi-arch manifest covers amd64/arm64/armv7.
+  - `ghcr.io/hrezenmsft/rustdeskadmin-server-s6:<version>` / `:latest` — s6-overlay based image that runs **both** `hbbs` and `hbbr` inside a **single** container (an internal process supervisor starts both automatically — there is no way to run just one of them via this image). Only use this image as **one** container per server, never as two containers each expecting to own one binary — doing so causes both containers to each try to bind every port (rendezvous *and* relay), since each one starts a full internal copy of both services. Multi-arch manifest covers amd64/arm64/armv7/i386.
 
 Releases are created as **drafts** — after a tag push, go to the repo's Releases page and publish (or `gh release edit <tag> --draft=false`) once you've confirmed all artifacts uploaded successfully.
+
+> **Fork-specific CI note:** because this fork must be dispatched via `workflow_dispatch` rather than a real tag push (see the `ADMIN_PRESENCE_CHANGELOG.md` entry on the fork's disabled automatic tag-push trigger), an upstream guard that skipped creating the exact-version (`:vX.Y.Z`) Docker manifest specifically on `workflow_dispatch` runs was removed from `.github/workflows/build.yaml` (fixed after `v1.1.2`, where this caused the bare `:v1.1.2` manifest to be silently missing from GHCR even though the per-arch `:v1.1.2-amd64` etc. tags existed). If you ever see a version tag missing from `ghcr.io/hrezenmsft/rustdeskadmin-server[-s6]` while its per-arch-suffixed tags do exist, re-check this guard first.
 
 #### Finding the current release/tag and picking the right architecture
 
@@ -99,13 +101,15 @@ Architecture suffixes used consistently across all three package types below:
 Check with `dpkg --print-architecture` (Debian/Ubuntu) or `uname -m` if unsure. Docker automatically pulls the matching arch from the multi-arch manifest, so architecture selection only matters for the zip/`.deb` paths.
 
 #### Deploy via Docker Compose (fastest path, recommended for most users)
+
+This runs `hbbs` and `hbbr` as **two separate containers** on a dedicated bridge network — the same topology as the official upstream RustDesk deployment (see this repo's own unmodified `docker-compose.yml` at the repo root, which does the same thing against `rustdesk/rustdesk-server:latest`) — using this fork's "classic" GHCR image (`ghcr.io/hrezenmsft/rustdeskadmin-server`), **not** the `-s6` image (see the important note above about why the `-s6` image must not be split across two containers this way).
 ```bash
 mkdir -p /opt/rustdeskadmin && cd /opt/rustdeskadmin
 curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
 mv docker-compose.example.yml docker-compose.yml
 ```
 Edit `docker-compose.yml` before starting it:
-1. Set `RELAY` (in the `hbbs` command/environment) to your server's public IP or hostname — this is what clients are told to use for the relay connection, and it must be reachable by every client, not just the server itself.
+1. Set the `-r` argument in the `hbbs` service's `command:` (e.g. `hbbs -r your-server-public-ip-or-hostname:21117`) to your server's public IP or hostname — this is what clients are told to use for the relay connection, and it must be reachable by every client, not just the server itself.
 2. Set `ADMIN_API_TOKEN_HASH` to the bcrypt hash of a long random admin token (see "Generating the admin token hash from a container, without installing Rust" below — you do **not** need a local build for this either). Remember every literal `$` inside the bcrypt hash must be escaped as `$$` in this file, or Compose will try to interpret it as variable interpolation and corrupt the hash.
 3. Set `ADMIN_API_JWT_SECRET` to a separate long random value (used to sign short-lived admin session JWTs; if omitted, a new one is generated on every container restart, invalidating all admin sessions each time).
 4. If you are replacing an existing server real clients already trust, follow the "migrating an existing keypair" comment block inside the file **before** the first `docker compose up` — otherwise a fresh keypair is generated and every client will show a "server key changed" warning on next connect.

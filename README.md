@@ -30,7 +30,7 @@ This repository is a **private fork of the official [rustdesk/rustdesk-server](h
 ```bash
 curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
 mv docker-compose.example.yml docker-compose.yml
-# edit docker-compose.yml: set RELAY, ADMIN_API_TOKEN_HASH, ADMIN_API_JWT_SECRET (see comments in the file)
+# edit docker-compose.yml: set the hbbs command's -r <host> address, plus ADMIN_API_TOKEN_HASH / ADMIN_API_JWT_SECRET (see comments in the file)
 docker compose up -d
 ```
 See **[docs/ADMIN_PRESENCE_DEVELOPMENT.md § Production release packages](docs/ADMIN_PRESENCE_DEVELOPMENT.md#production-release-packages-recommended--no-local-build-required)** for the full walkthrough of all three package types (Docker Compose, plain `docker run`, `.deb` + systemd) including architecture selection, admin-token setup without any local Rust install, verification, and upgrade steps — or grab packages directly from the **[Releases page](https://github.com/hrezenmsft/rustdeskadmin-server/releases)**.

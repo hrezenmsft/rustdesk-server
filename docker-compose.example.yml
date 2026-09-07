@@ -4,9 +4,26 @@
 #   docker compose pull
 #   docker compose up -d
 #
-# This uses the pre-built s6-overlay image published to GHCR by this repo's
-# .github/workflows/build.yaml release pipeline (ghcr.io/hrezenmsft/rustdeskadmin-server-s6).
-# No local build/toolchain is required.
+# This runs hbbs and hbbr as two SEPARATE containers, matching the official
+# upstream RustDesk deployment pattern (see the plain, unmodified `docker-compose.yml`
+# already at the repo root, which does the same thing against the official
+# rustdesk/rustdesk-server:latest image) — one container per binary, on a
+# dedicated bridge network with explicit port mappings, rather than
+# `network_mode: host`. It uses the "classic" image published to GHCR by this
+# repo's .github/workflows/build.yaml release pipeline
+# (ghcr.io/hrezenmsft/rustdeskadmin-server), a minimal `FROM scratch` image
+# containing only the hbbs/hbbr binaries with no process supervisor — each
+# container runs exactly one of them via `command:`. No local build/toolchain
+# is required.
+#
+# NOTE: do NOT use the "-s6" image (ghcr.io/hrezenmsft/rustdeskadmin-server-s6)
+# for a two-container layout like this one. That image bundles an s6-overlay
+# process supervisor that always starts BOTH hbbs and hbbr inside a single
+# container (see docker/rootfs/etc/s6-overlay/s6-rc.d/user/contents.d/). Running
+# it twice, once per intended service, means every container tries to start its
+# own internal copy of both hbbs and hbbr, so the second container fails to bind
+# ports already held by the first. The s6 image is meant to be run as a single
+# all-in-one container instead (`docker run` one instance, no `command:` override).
 #
 # Generate ADMIN_API_TOKEN_HASH (a bcrypt hash of your chosen admin token) with, e.g.:
 #   docker run --rm -it python:3.12-slim bash -c "pip install bcrypt -q && python3 -c \"
@@ -19,54 +36,62 @@
 # IMPORTANT: every literal `$` in the bcrypt hash must be written as `$$` below,
 # otherwise Compose's variable substitution will silently corrupt it.
 
+networks:
+  rustdesk-net:
+    external: false
+
 services:
   hbbs:
-    image: ghcr.io/hrezenmsft/rustdeskadmin-server-s6:latest
     container_name: rustdeskadmin-hbbs
-    network_mode: host
+    image: ghcr.io/hrezenmsft/rustdeskadmin-server:latest
+    command: hbbs -r your-server-public-ip-or-hostname:21117
+    ports:
+      - "21115:21115"
+      - "21116:21116"
+      - "21116:21116/udp"
+      - "21118:21118"
+      - "21114:21114"   # admin API — keep this behind a firewall/VPN/reverse-proxy,
+                        # never expose directly to the public internet.
     volumes:
-      - rustdesk-data:/data
+      - ./data:/root
     environment:
-      RELAY: "your-server-public-ip-or-hostname"   # advertised to clients for relay
-      ENCRYPTED_ONLY: "0"
       ADMIN_API_TOKEN_HASH: "<bcrypt hash, with every $ doubled as $$>"
       ADMIN_API_JWT_SECRET: "<a separate long random secret, keep stable across restarts>"
       ADMIN_API_PORT: "21114"
+    networks:
+      - rustdesk-net
+    depends_on:
+      - hbbr
     restart: unless-stopped
 
   hbbr:
-    image: ghcr.io/hrezenmsft/rustdeskadmin-server-s6:latest
     container_name: rustdeskadmin-hbbr
-    network_mode: host
+    image: ghcr.io/hrezenmsft/rustdeskadmin-server:latest
+    command: hbbr
+    ports:
+      - "21117:21117"
+      - "21119:21119"
     volumes:
-      - rustdesk-data:/data
-    environment:
-      ENCRYPTED_ONLY: "0"
+      - ./data:/root
+    networks:
+      - rustdesk-net
     restart: unless-stopped
 
-volumes:
-  rustdesk-data:
-
-# Networking note: `network_mode: host` and `ports:` are mutually exclusive in
-# Compose. If you need bridge networking instead (e.g. running alongside other
-# containers that also want host networking), remove `network_mode: host` from
-# both services and add instead:
-#   ports:
-#     - "21115:21115"
-#     - "21116:21116"
-#     - "21116:21116/udp"
-#     - "21117:21117"
-#     - "21118:21118"
-#     - "21119:21119"
-#     - "21114:21114"   # admin API — keep this behind a firewall/VPN/reverse-proxy,
-#                       # never expose directly to the public internet.
+# Networking note: this mirrors the upstream pattern exactly (bridge network,
+# explicit port mappings, one binary per container) instead of `network_mode: host`.
+# NAT hole-punching between two RustDesk clients relies on hbbs seeing each
+# client's real source port; Docker's default bridge networking DNATs/rewrites
+# that port, which can break traversal for some client pairs behind strict NATs.
+# If you hit connection issues that only reproduce through this deployment (and
+# not through a bare-metal/systemd or host-networked deployment), switch both
+# services to `network_mode: host` instead of `ports:` (the two are mutually
+# exclusive in Compose) as a troubleshooting step.
 #
 # Migrating an existing server's identity into this deployment: hbbs generates a
 # new id_ed25519/id_ed25519.pub keypair the first time it starts against an empty
-# /data volume, which changes the server's public key fingerprint and breaks every
-# client that already trusts the old one. Before the first `docker compose up`,
-# copy your existing keypair into the named volume:
-#   docker compose up -d --no-start
-#   docker run --rm -v <project>_rustdesk-data:/data -v /path/to/old/data:/old alpine \
-#     cp /old/id_ed25519 /old/id_ed25519.pub /data/
+# ./data directory, which changes the server's public key fingerprint and breaks
+# every client that already trusts the old one. Before the first
+# `docker compose up`, copy your existing keypair into ./data first:
+#   mkdir -p ./data
+#   cp /path/to/old/data/id_ed25519 /path/to/old/data/id_ed25519.pub ./data/
 #   docker compose up -d
