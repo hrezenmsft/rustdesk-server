@@ -8,6 +8,11 @@ Entries are grouped by date, newest first. Each dated section corresponds to one
 
 ### Added
 
+- Enabled and adapted the existing (previously dormant/upstream-configured) `.github/workflows/build.yaml` CI pipeline for this fork: retargeted GHCR image names to `ghcr.io/hrezenmsft/rustdeskadmin-server-s6` and `ghcr.io/hrezenmsft/rustdeskadmin-server`, fixed the hardcoded GHCR login username, granted the `contents: write` permission needed for release creation, and disabled all Docker Hub publishing steps (`if: false`) since this fork does not use Docker Hub — no `DOCKER_IMAGE`/`DOCKER_HUB_USERNAME`/`DOCKER_HUB_PASSWORD` secrets are required. On every `vX.Y.Z` tag push this now automatically produces: Linux binary zips (amd64/arm64v8/armv7/i386), `.deb` packages per architecture, Windows binaries, and multi-arch Docker images (s6-overlay + classic) published to GHCR — all already containing the admin presence API, no separate build step needed.
+- Added `docker-compose.example.yml` at the repo root: a ready-to-use Compose file referencing the published GHCR image, documenting the bcrypt `$`-escaping pitfall, bridge-networking alternative, and existing-keypair migration steps inline.
+- Documented all three "no local build" production deployment paths (Docker Compose, plain `docker run`, `.deb` + systemd) in `docs/ADMIN_PRESENCE_DEVELOPMENT.md` under a new "Production release packages" section, ahead of the existing from-source build instructions.
+- Added `EXPOSE 21114` to `docker/Dockerfile` (the admin API port) for documentation/introspection purposes (does not affect actual port publishing, which is controlled by `-p`/`ports:`).
+
 - Deployed the admin-presence-enabled server as Docker Compose–managed containers (`hbbs`/`hbbr`, host networking) on the lab server VM, replacing the earlier systemd-managed baseline for day-to-day testing.
 
 ### Changed

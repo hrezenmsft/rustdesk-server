@@ -1,0 +1,72 @@
+# Example docker-compose.yml for rustdeskadmin-server.
+#
+# Copy this file to docker-compose.yml, fill in the placeholders below, then run:
+#   docker compose pull
+#   docker compose up -d
+#
+# This uses the pre-built s6-overlay image published to GHCR by this repo's
+# .github/workflows/build.yaml release pipeline (ghcr.io/hrezenmsft/rustdeskadmin-server-s6).
+# No local build/toolchain is required.
+#
+# Generate ADMIN_API_TOKEN_HASH (a bcrypt hash of your chosen admin token) with, e.g.:
+#   docker run --rm -it python:3.12-slim bash -c "pip install bcrypt -q && python3 -c \"
+#   import bcrypt, getpass
+#   pw = getpass.getpass('Admin token (plaintext): ').encode()
+#   print(bcrypt.hashpw(pw, bcrypt.gensalt()).decode())
+#   \""
+# Save the plaintext token somewhere safe — it cannot be recovered from the hash.
+#
+# IMPORTANT: every literal `$` in the bcrypt hash must be written as `$$` below,
+# otherwise Compose's variable substitution will silently corrupt it.
+
+services:
+  hbbs:
+    image: ghcr.io/hrezenmsft/rustdeskadmin-server-s6:latest
+    container_name: rustdeskadmin-hbbs
+    network_mode: host
+    volumes:
+      - rustdesk-data:/data
+    environment:
+      RELAY: "your-server-public-ip-or-hostname"   # advertised to clients for relay
+      ENCRYPTED_ONLY: "0"
+      ADMIN_API_TOKEN_HASH: "<bcrypt hash, with every $ doubled as $$>"
+      ADMIN_API_JWT_SECRET: "<a separate long random secret, keep stable across restarts>"
+      ADMIN_API_PORT: "21114"
+    restart: unless-stopped
+
+  hbbr:
+    image: ghcr.io/hrezenmsft/rustdeskadmin-server-s6:latest
+    container_name: rustdeskadmin-hbbr
+    network_mode: host
+    volumes:
+      - rustdesk-data:/data
+    environment:
+      ENCRYPTED_ONLY: "0"
+    restart: unless-stopped
+
+volumes:
+  rustdesk-data:
+
+# Networking note: `network_mode: host` and `ports:` are mutually exclusive in
+# Compose. If you need bridge networking instead (e.g. running alongside other
+# containers that also want host networking), remove `network_mode: host` from
+# both services and add instead:
+#   ports:
+#     - "21115:21115"
+#     - "21116:21116"
+#     - "21116:21116/udp"
+#     - "21117:21117"
+#     - "21118:21118"
+#     - "21119:21119"
+#     - "21114:21114"   # admin API — keep this behind a firewall/VPN/reverse-proxy,
+#                       # never expose directly to the public internet.
+#
+# Migrating an existing server's identity into this deployment: hbbs generates a
+# new id_ed25519/id_ed25519.pub keypair the first time it starts against an empty
+# /data volume, which changes the server's public key fingerprint and breaks every
+# client that already trusts the old one. Before the first `docker compose up`,
+# copy your existing keypair into the named volume:
+#   docker compose up -d --no-start
+#   docker run --rm -v <project>_rustdesk-data:/data -v /path/to/old/data:/old alpine \
+#     cp /old/id_ed25519 /old/id_ed25519.pub /data/
+#   docker compose up -d

@@ -67,7 +67,54 @@ Expose `GET /admin/v1/devices?status=online` only to authorized administrators. 
 
 ## How to Deploy
 
-### Option A: Ubuntu Server VM with systemd
+### Production release packages (recommended — no local build required)
+
+Starting with `v1.1.0`, `.github/workflows/build.yaml` (adapted from upstream's own CI, retargeted to this fork's GHCR namespace and with Docker Hub publishing disabled since this fork does not use Docker Hub) automatically builds and publishes a full set of installable artifacts on every `vX.Y.Z` tag push. **End users deploying to a server they administer should use these prebuilt artifacts instead of building from source.** They already contain the admin presence feature — no separate "admin" build step or extra Dockerfile is needed.
+
+Each tagged release publishes:
+- **Linux binaries** (`hbbs`, `hbbr`, `rustdesk-utils`), zipped per architecture: `rustdesk-server-linux-{amd64,arm64v8,armv7,i386}.zip` — attached to the GitHub release.
+- **Debian packages** (`.deb`) per architecture — `rustdesk-server-hbbs_*.deb`, `rustdesk-server-hbbr_*.deb`, `rustdesk-server-utils_*.deb` — also attached to the release, installable via `apt install ./<file>.deb` and wired up with the repo's own `systemd/` unit files automatically.
+- **Docker images**, published to GHCR (public, no login needed to pull):
+  - `ghcr.io/hrezenmsft/rustdeskadmin-server-s6:<version>` / `:latest` — s6-overlay based image (recommended; handles service supervision and healthchecks for you). Multi-arch manifest covers amd64/arm64/armv7/i386.
+  - `ghcr.io/hrezenmsft/rustdeskadmin-server:<version>` / `:latest` — "classic" minimal `FROM scratch` image (just the two binaries; you control the entrypoint/command yourself). Multi-arch manifest covers amd64/arm64/armv7.
+
+Releases are created as **drafts** — after a tag push, go to the repo's Releases page and publish (or `gh release edit <tag> --draft=false`) once you've confirmed all artifacts uploaded successfully.
+
+#### Deploy via Docker Compose (fastest path)
+```bash
+curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
+mv docker-compose.example.yml docker-compose.yml
+# edit docker-compose.yml: set RELAY to your server's public IP/hostname,
+# and ADMIN_API_TOKEN_HASH / ADMIN_API_JWT_SECRET (see comments in the file)
+docker compose pull
+docker compose up -d
+```
+See the comments inside `docker-compose.example.yml` for bridge-networking alternatives and for migrating an existing server's keypair into the new deployment (critical if replacing a server real clients already trust — otherwise every client will see a "server key changed" warning).
+
+#### Deploy via plain `docker run` (classic image)
+```bash
+docker volume create rustdesk-data
+docker run -d --name rustdeskadmin-hbbs --network host \
+  -v rustdesk-data:/data \
+  -e ADMIN_API_TOKEN_HASH='<bcrypt hash>' -e ADMIN_API_JWT_SECRET='<random secret>' -e ADMIN_API_PORT=21114 \
+  ghcr.io/hrezenmsft/rustdeskadmin-server:latest /usr/bin/hbbs -r your-server-hostname
+docker run -d --name rustdeskadmin-hbbr --network host \
+  -v rustdesk-data:/data \
+  ghcr.io/hrezenmsft/rustdeskadmin-server:latest /usr/bin/hbbr
+```
+
+#### Deploy via `.deb` package on a VM (systemd, no Rust toolchain needed)
+```bash
+wget https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/<tag>/rustdesk-server-hbbs_<version>_amd64.deb
+wget https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/<tag>/rustdesk-server-hbbr_<version>_amd64.deb
+wget https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/<tag>/rustdesk-server-utils_<version>_amd64.deb
+sudo apt install ./rustdesk-server-hbbs_*_amd64.deb ./rustdesk-server-hbbr_*_amd64.deb ./rustdesk-server-utils_*_amd64.deb
+sudo systemctl edit rustdesk-hbbs   # add [Service]\nEnvironment=ADMIN_API_TOKEN_HASH=...\nEnvironment=ADMIN_API_JWT_SECRET=...\nEnvironment=ADMIN_API_PORT=21114
+sudo systemctl enable --now rustdesk-hbbs rustdesk-hbbr
+```
+This is functionally equivalent to Option A below, but skips the Rust toolchain install and the ~15–20 minute local build entirely.
+
+### Option A: Ubuntu Server VM with systemd (build from source)
 
 This is the recommended path for a private lab or a small production deployment (for example a 1–2 vCPU / 2 GB RAM Ubuntu Server VM under Hyper-V, KVM, or any hypervisor/cloud provider).
 
