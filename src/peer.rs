@@ -33,7 +33,8 @@ pub(crate) struct PeerInfo {
     pub(crate) username: String,
 }
 
-/// Minimal, least-privilege view of a currently-online peer, used only by the
+/// Admin-presence customization for this Windows client version: minimal,
+/// least-privilege view of a currently-online peer, used only by the
 /// authenticated admin presence API (see `admin_api.rs`). Intentionally omits
 /// IP address and any other peer detail beyond what the admin device list needs.
 #[derive(Debug, Clone, Serialize)]
@@ -192,7 +193,8 @@ impl PeerMap {
         self.map.read().await.contains_key(id)
     }
 
-    /// Lists peers currently considered online, i.e. whose last registration
+    /// Admin-presence customization for this Windows client version: lists
+    /// peers currently considered online, i.e. whose last registration
     /// (heartbeat/keep-alive) happened within `timeout_ms`. This mirrors the
     /// same online-detection semantics already used for the existing
     /// `OnlineRequest` protocol handler (`elapsed < REG_TIMEOUT`), reused here

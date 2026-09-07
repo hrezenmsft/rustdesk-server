@@ -34,6 +34,8 @@ fn gen_keypair() {
 }
 
 fn hash_token(token: &str) {
+    // Admin-presence customization for this Windows client version: generate
+    // the bcrypt hash stored in ADMIN_API_TOKEN_HASH on the server.
     match bcrypt::hash(token, bcrypt::DEFAULT_COST) {
         Ok(hash) => {
             println!("ADMIN_API_TOKEN_HASH={hash}");

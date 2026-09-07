@@ -201,6 +201,8 @@ impl RendezvousServer {
         };
         {
             let admin_pm = pm.clone();
+            // Admin-presence customization for this Windows client version:
+            // serve the additive admin API beside the normal rendezvous server.
             tokio::spawn(async move {
                 if let Err(err) = crate::admin_api::serve(admin_pm, bind_addr).await {
                     log::error!("Admin presence API stopped: {err}");
