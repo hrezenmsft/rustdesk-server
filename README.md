@@ -26,6 +26,17 @@ This repository is a **private fork of the official [rustdesk/rustdesk-server](h
 
 ### Quick start (see the development doc for full detail, including Docker Compose)
 
+**Recommended: deploy from a prebuilt release package — no build required.** Every `vX.Y.Z` tag publishes Linux binaries, `.deb` packages, and multi-arch Docker images (GHCR) with the admin API already built in. Fastest path (Docker Compose):
+```bash
+curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
+mv docker-compose.example.yml docker-compose.yml
+# edit docker-compose.yml: set RELAY, ADMIN_API_TOKEN_HASH, ADMIN_API_JWT_SECRET (see comments in the file)
+docker compose up -d
+```
+See **[docs/ADMIN_PRESENCE_DEVELOPMENT.md § Production release packages](docs/ADMIN_PRESENCE_DEVELOPMENT.md#production-release-packages-recommended--no-local-build-required)** for the full walkthrough of all three package types (Docker Compose, plain `docker run`, `.deb` + systemd) including architecture selection, admin-token setup without any local Rust install, verification, and upgrade steps — or grab packages directly from the **[Releases page](https://github.com/hrezenmsft/rustdeskadmin-server/releases)**.
+
+Building from source instead:
+
 ```bash
 git clone https://github.com/hrezenmsft/rustdeskadmin-server.git
 cd rustdeskadmin-server

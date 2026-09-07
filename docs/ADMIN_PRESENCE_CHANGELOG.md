@@ -6,7 +6,10 @@ Entries are grouped by date, newest first. Each dated section corresponds to one
 
 ## Unreleased
 
-_No unreleased changes._
+### Changed
+
+- Expanded `docs/ADMIN_PRESENCE_DEVELOPMENT.md`'s "Production release packages" section with much more deploy-from-package detail: how to find the latest tag/release, an architecture-selection table (amd64/arm64/armhf/i386) shared across all three package types, per-path verification commands, per-path upgrade instructions, and a way to generate the admin token bcrypt hash from the published Docker image (`docker run --rm --entrypoint /usr/bin/rustdesk-utils ...`) so a from-package deployment never needs any local Rust toolchain, not even temporarily.
+- Added a "Quick start" summary of the recommended Docker Compose no-build deployment path to `README.md`, linking to the expanded development-doc section and the Releases page, ahead of the from-source build instructions.
 
 ## 2026-09-07 13:35 (`242dd00`, released `v1.1.2`)
 

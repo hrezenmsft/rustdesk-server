@@ -80,39 +80,122 @@ Each tagged release publishes:
 
 Releases are created as **drafts** — after a tag push, go to the repo's Releases page and publish (or `gh release edit <tag> --draft=false`) once you've confirmed all artifacts uploaded successfully.
 
-#### Deploy via Docker Compose (fastest path)
+#### Finding the current release/tag and picking the right architecture
+
 ```bash
+# Latest published (non-draft) tag:
+gh release list --repo hrezenmsft/rustdeskadmin-server --limit 1
+# or, without gh CLI:
+curl -s https://api.github.com/repos/hrezenmsft/rustdeskadmin-server/releases/latest | grep '"tag_name"'
+```
+Architecture suffixes used consistently across all three package types below:
+| Host CPU | `.deb`/zip suffix | Docker manifest arch |
+| --- | --- | --- |
+| Intel/AMD 64-bit (most VMs/cloud instances) | `amd64` | `linux/amd64` |
+| ARM64 (e.g. Raspberry Pi 4/5 64-bit OS, AWS Graviton, Oracle Ampere) | `arm64` (`.deb`) / `arm64v8` (zip) | `linux/arm64` |
+| ARMv7 32-bit (older Raspberry Pi) | `armhf` (`.deb`) / `armv7` (zip) | `linux/arm/v7` |
+| 32-bit x86 (rare, legacy hardware) | `i386` | `linux/386` |
+
+Check with `dpkg --print-architecture` (Debian/Ubuntu) or `uname -m` if unsure. Docker automatically pulls the matching arch from the multi-arch manifest, so architecture selection only matters for the zip/`.deb` paths.
+
+#### Deploy via Docker Compose (fastest path, recommended for most users)
+```bash
+mkdir -p /opt/rustdeskadmin && cd /opt/rustdeskadmin
 curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
 mv docker-compose.example.yml docker-compose.yml
-# edit docker-compose.yml: set RELAY to your server's public IP/hostname,
-# and ADMIN_API_TOKEN_HASH / ADMIN_API_JWT_SECRET (see comments in the file)
+```
+Edit `docker-compose.yml` before starting it:
+1. Set `RELAY` (in the `hbbs` command/environment) to your server's public IP or hostname — this is what clients are told to use for the relay connection, and it must be reachable by every client, not just the server itself.
+2. Set `ADMIN_API_TOKEN_HASH` to the bcrypt hash of a long random admin token (see "Generating the admin token hash from a container, without installing Rust" below — you do **not** need a local build for this either). Remember every literal `$` inside the bcrypt hash must be escaped as `$$` in this file, or Compose will try to interpret it as variable interpolation and corrupt the hash.
+3. Set `ADMIN_API_JWT_SECRET` to a separate long random value (used to sign short-lived admin session JWTs; if omitted, a new one is generated on every container restart, invalidating all admin sessions each time).
+4. If you are replacing an existing server real clients already trust, follow the "migrating an existing keypair" comment block inside the file **before** the first `docker compose up` — otherwise a fresh keypair is generated and every client will show a "server key changed" warning on next connect.
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose ps                 # both hbbs and hbbr should show "running"/"healthy"
+docker compose logs -f hbbs        # watch for client registrations (update_pk) and admin API startup log line
+```
+See the comments inside `docker-compose.example.yml` for the bridge-networking alternative (host networking, used by default, is strongly recommended for NAT traversal — see Option B below for why).
+
+**Upgrading:** edit the image tag in `docker-compose.yml` (or keep `:latest` and just re-pull), then:
+```bash
 docker compose pull
 docker compose up -d
 ```
-See the comments inside `docker-compose.example.yml` for bridge-networking alternatives and for migrating an existing server's keypair into the new deployment (critical if replacing a server real clients already trust — otherwise every client will see a "server key changed" warning).
+The named volume (and the keypair/database inside it) is untouched by an image upgrade.
 
 #### Deploy via plain `docker run` (classic image)
 ```bash
 docker volume create rustdesk-data
-docker run -d --name rustdeskadmin-hbbs --network host \
+docker run -d --name rustdeskadmin-hbbs --network host --restart unless-stopped \
   -v rustdesk-data:/data \
   -e ADMIN_API_TOKEN_HASH='<bcrypt hash>' -e ADMIN_API_JWT_SECRET='<random secret>' -e ADMIN_API_PORT=21114 \
   ghcr.io/hrezenmsft/rustdeskadmin-server:latest /usr/bin/hbbs -r your-server-hostname
-docker run -d --name rustdeskadmin-hbbr --network host \
+docker run -d --name rustdeskadmin-hbbr --network host --restart unless-stopped \
   -v rustdesk-data:/data \
   ghcr.io/hrezenmsft/rustdeskadmin-server:latest /usr/bin/hbbr
+```
+Verify both containers stay up and check logs the same way as Compose above:
+```bash
+docker ps --filter name=rustdeskadmin
+docker logs -f rustdeskadmin-hbbs
+```
+**Upgrading:**
+```bash
+docker pull ghcr.io/hrezenmsft/rustdeskadmin-server:latest
+docker stop rustdeskadmin-hbbs rustdeskadmin-hbbr && docker rm rustdeskadmin-hbbs rustdeskadmin-hbbr
+# re-run the two `docker run` commands above — the named volume persists the keypair/database
 ```
 
 #### Deploy via `.deb` package on a VM (systemd, no Rust toolchain needed)
 ```bash
-wget https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/<tag>/rustdesk-server-hbbs_<version>_amd64.deb
-wget https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/<tag>/rustdesk-server-hbbr_<version>_amd64.deb
-wget https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/<tag>/rustdesk-server-utils_<version>_amd64.deb
-sudo apt install ./rustdesk-server-hbbs_*_amd64.deb ./rustdesk-server-hbbr_*_amd64.deb ./rustdesk-server-utils_*_amd64.deb
-sudo systemctl edit rustdesk-hbbs   # add [Service]\nEnvironment=ADMIN_API_TOKEN_HASH=...\nEnvironment=ADMIN_API_JWT_SECRET=...\nEnvironment=ADMIN_API_PORT=21114
-sudo systemctl enable --now rustdesk-hbbs rustdesk-hbbr
+# replace <tag> with the value from "Finding the current release" above, e.g. v1.1.2, and <version> with the
+# numeric package version shown in that release's asset list (Cargo package version, e.g. 1.1.17 — not the git tag)
+TAG=v1.1.2
+VERSION=1.1.17
+ARCH=amd64   # or arm64 / armhf / i386, see architecture table above
+wget "https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/${TAG}/rustdesk-server-hbbs_${VERSION}_${ARCH}.deb"
+wget "https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/${TAG}/rustdesk-server-hbbr_${VERSION}_${ARCH}.deb"
+wget "https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/${TAG}/rustdesk-server-utils_${VERSION}_${ARCH}.deb"
+sudo apt install ./rustdesk-server-hbbs_*_${ARCH}.deb ./rustdesk-server-hbbr_*_${ARCH}.deb ./rustdesk-server-utils_*_${ARCH}.deb
 ```
-This is functionally equivalent to Option A below, but skips the Rust toolchain install and the ~15–20 minute local build entirely.
+Generate the admin token hash using the just-installed `rustdesk-utils` binary (no build required — the `.deb` already put it on `PATH`):
+```bash
+rustdesk-utils hashtoken '<your-long-random-admin-token>'
+```
+Configure the admin-presence environment variables as a systemd drop-in override, so the shipped unit file is never hand-edited:
+```bash
+sudo systemctl edit rustdesk-hbbs
+```
+Add in the editor that opens:
+```ini
+[Service]
+Environment=ADMIN_API_TOKEN_HASH=<bcrypt hash from the previous step>
+Environment=ADMIN_API_JWT_SECRET=<a separate long random secret>
+Environment=ADMIN_API_PORT=21114
+```
+Then enable, start, and open the firewall the same as in Option A steps 7–9 below:
+```bash
+sudo ufw allow 21115:21119/tcp
+sudo ufw allow 21116/udp
+sudo ufw allow 21114/tcp   # admin API — restrict to trusted source IPs/VPN if possible
+sudo systemctl daemon-reload
+sudo systemctl enable --now rustdesk-hbbs rustdesk-hbbr
+sudo systemctl status rustdesk-hbbs rustdesk-hbbr
+curl -X POST http://localhost:21114/admin/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"token":"<your-plaintext-admin-token>"}'   # should return a JWT
+```
+**Upgrading:** download the new `.deb` files for the newer tag and re-run `sudo apt install ./rustdesk-server-*_${ARCH}.deb` (apt upgrades in place); your systemd drop-in override and `/var/lib/rustdesk-server/` data are untouched. Restart both services afterward: `sudo systemctl restart rustdesk-hbbs rustdesk-hbbr`.
+
+This `.deb` path is functionally equivalent to Option A below, but skips the Rust toolchain install and the ~15–20 minute local build entirely.
+
+#### Generating the admin token hash from a container, without installing Rust
+If you are deploying entirely from prebuilt packages and don't want to install any Rust toolchain even temporarily, generate the bcrypt hash using the already-built `rustdesk-utils` inside the Docker image itself instead of building it locally:
+```bash
+docker run --rm --entrypoint /usr/bin/rustdesk-utils \
+  ghcr.io/hrezenmsft/rustdeskadmin-server:latest hashtoken '<your-long-random-admin-token>'
+```
 
 ### Option A: Ubuntu Server VM with systemd (build from source)
 
