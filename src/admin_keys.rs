@@ -24,7 +24,6 @@ use std::{
     sync::RwLock,
     time::{SystemTime, UNIX_EPOCH},
 };
-
 /// Default filename for the authorized-keys store, resolved relative to the
 /// same working directory hbbs/hbbr already use for `db_v2.sqlite3` and the
 /// `.env` file (see `peer.rs::PeerMap::new` and `utils.rs::init_admin`).
@@ -57,6 +56,12 @@ struct KeysFile {
 pub struct AdminKeyStore {
     path: PathBuf,
     keys: RwLock<HashMap<String, AuthorizedKey>>,
+    // Admin-presence customization (v2.0.0): mtime of `path` as of the last
+    // successful load, so `find_active` can cheaply detect that
+    // `rustdesk-utils genadminkey`/`revokeadminkey` (a separate process)
+    // wrote a new version of the file and pick it up without a server
+    // restart.
+    loaded_mtime: RwLock<Option<SystemTime>>,
 }
 
 fn now_secs() -> u64 {
@@ -86,7 +91,21 @@ impl AdminKeyStore {
     /// yet written to disk) if the file does not exist.
     pub fn load(path: impl AsRef<Path>) -> io::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let keys = match std::fs::read_to_string(&path) {
+        let (keys, mtime) = Self::read_from_disk(&path)?;
+        Ok(Self {
+            path,
+            keys: RwLock::new(keys),
+            loaded_mtime: RwLock::new(mtime),
+        })
+    }
+
+    /// Reads and parses `path`, returning an empty map (not an error) if the
+    /// file does not exist yet, along with the file's mtime at read time
+    /// (`None` if the file does not exist).
+    fn read_from_disk(
+        path: &Path,
+    ) -> io::Result<(HashMap<String, AuthorizedKey>, Option<SystemTime>)> {
+        match std::fs::read_to_string(path) {
             Ok(content) => {
                 let parsed: KeysFile = serde_json::from_str(&content).map_err(|e| {
                     io::Error::new(
@@ -94,24 +113,57 @@ impl AdminKeyStore {
                         format!("failed to parse {}: {e}", path.display()),
                     )
                 })?;
-                parsed
+                let keys = parsed
                     .keys
                     .into_iter()
                     .map(|k| (k.fingerprint.clone(), k))
-                    .collect()
+                    .collect();
+                let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+                Ok((keys, mtime))
             }
-            Err(e) if e.kind() == io::ErrorKind::NotFound => HashMap::new(),
-            Err(e) => return Err(e),
-        };
-        Ok(Self {
-            path,
-            keys: RwLock::new(keys),
-        })
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok((HashMap::new(), None)),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Admin-presence customization (v2.0.0): re-reads `path` from disk if
+    /// its mtime has changed since it was last loaded into memory, so that
+    /// `rustdesk-utils genadminkey`/`revokeadminkey` (which write directly to
+    /// this file from a separate process, e.g. a one-off `docker exec`) take
+    /// effect on the running server without a restart. Cheap no-op (a single
+    /// `stat`) on the common case where nothing changed. Failures to
+    /// re-read/parse are logged and ignored, keeping the previously-loaded
+    /// in-memory state in effect rather than failing the auth attempt that
+    /// triggered the check.
+    fn refresh_if_stale(&self) {
+        let current_mtime = std::fs::metadata(&self.path).and_then(|m| m.modified()).ok();
+        {
+            let loaded = self.loaded_mtime.read().unwrap();
+            if *loaded == current_mtime {
+                return;
+            }
+        }
+        match Self::read_from_disk(&self.path) {
+            Ok((keys, mtime)) => {
+                *self.keys.write().unwrap() = keys;
+                *self.loaded_mtime.write().unwrap() = mtime;
+            }
+            Err(e) => {
+                hbb_common::log::warn!(
+                    "admin_keys: failed to reload {}: {e}; keeping previously loaded keys",
+                    self.path.display()
+                );
+            }
+        }
     }
 
     /// Atomically persists the current in-memory state to disk (write to a
     /// temp file in the same directory, then rename) so a crash mid-write
-    /// can never leave a corrupt/partial store on disk.
+    /// can never leave a corrupt/partial store on disk. Also updates the
+    /// tracked mtime to the freshly-written file's, so this process's own
+    /// writes (e.g. from `touch_last_used`) don't make `refresh_if_stale`
+    /// think another process changed the file and trigger a needless
+    /// re-read on the very next call.
     fn persist(&self) -> io::Result<()> {
         let keys: Vec<AuthorizedKey> = self.keys.read().unwrap().values().cloned().collect();
         let content = serde_json::to_string_pretty(&KeysFile { keys })
@@ -128,6 +180,8 @@ impl AdminKeyStore {
                 let _ = std::fs::set_permissions(&self.path, perms);
             }
         }
+        let new_mtime = std::fs::metadata(&self.path).and_then(|m| m.modified()).ok();
+        *self.loaded_mtime.write().unwrap() = new_mtime;
         Ok(())
     }
 
@@ -185,8 +239,13 @@ impl AdminKeyStore {
 
     /// Looks up a non-revoked key by its raw public key bytes, used during
     /// challenge-response verification. Returns `None` for unknown or
-    /// revoked keys (both fail closed the same way).
+    /// revoked keys (both fail closed the same way). First checks whether
+    /// the on-disk file has changed since it was last loaded (e.g. a
+    /// `rustdesk-utils genadminkey`/`revokeadminkey` run from a separate
+    /// process) and reloads if so, so enrollment/revocation take effect
+    /// without a server restart.
     pub fn find_active(&self, pk_bytes: &[u8]) -> Option<AuthorizedKey> {
+        self.refresh_if_stale();
         let fingerprint = fingerprint_of(pk_bytes);
         let keys = self.keys.read().unwrap();
         keys.get(&fingerprint)

@@ -14,13 +14,13 @@
 //! - This API is additive: it does not alter any existing RustDesk protocol
 //!   message or the main rendezvous port; it listens on its own port.
 //!
-//! v2.0.0: primary authentication is now per-client ed25519 challenge-response
-//! (`admin_auth::ChallengeStore` + `admin_keys::AdminKeyStore`) instead of a
-//! single shared bcrypt-hashed token. The legacy `POST /admin/v1/auth/login`
-//! (shared token) path is kept, disabled by default, only for migration from
-//! v1.x and is logged as deprecated on every use. Both paths issue the same
-//! short-lived JWT bearer session token consumed by `/admin/v1/devices`, so
-//! nothing downstream of login changed.
+//! v2.0.0: authentication is per-client ed25519 challenge-response
+//! (`admin_auth::ChallengeStore` + `admin_keys::AdminKeyStore`). The legacy
+//! shared bcrypt-hashed token (`POST /admin/v1/auth/login`,
+//! `ADMIN_API_TOKEN_HASH`) has been removed entirely in v2.0.0 — this server
+//! is not compatible with pre-2.0.0 admin clients. Both this API version and
+//! the removed one issued the same short-lived JWT bearer session token
+//! consumed by `/admin/v1/devices`, so nothing downstream of login changed.
 
 use crate::admin_auth::{AuthError, ChallengeStore};
 use crate::admin_keys::AdminKeyStore;
@@ -52,9 +52,6 @@ const JWT_ISSUER: &str = "rustdesk-admin-presence";
 #[derive(Clone)]
 struct AdminApiState {
     pm: PeerMap,
-    /// `None` once the legacy shared-token login is fully retired for this
-    /// deployment (ADMIN_API_TOKEN_HASH not set).
-    token_hash: Option<Arc<str>>,
     jwt_secret: Arc<str>,
     keys: Arc<AdminKeyStore>,
     challenges: Arc<ChallengeStore>,
@@ -66,11 +63,6 @@ struct Claims {
     iss: String,
     iat: u64,
     exp: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct LoginRequest {
-    token: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -166,57 +158,6 @@ fn verify_token(secret: &str, token: &str) -> bool {
     let mut validation = Validation::default();
     validation.set_issuer(&[JWT_ISSUER]);
     decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation).is_ok()
-}
-
-/// Legacy v1.x login: a single shared bcrypt-hashed token grants a session.
-/// Deprecated in favor of per-client ed25519 challenge-response (see
-/// `challenge`/`verify` below); kept only so a v1.x deployment can migrate
-/// without a hard cutover, and disabled entirely unless
-/// `ADMIN_API_TOKEN_HASH` is configured.
-async fn login(
-    Extension(state): Extension<AdminApiState>,
-    ConnectInfo(remote): ConnectInfo<SocketAddr>,
-    body: Result<Json<LoginRequest>, axum::extract::rejection::JsonRejection>,
-) -> axum::response::Response {
-    let Json(req) = match body {
-        Ok(v) => v,
-        Err(_) => {
-            audit("login", remote, "denied", "malformed request body");
-            return error_response(StatusCode::BAD_REQUEST, "malformed_request");
-        }
-    };
-    let Some(token_hash) = state.token_hash.as_deref() else {
-        audit("login", remote, "denied", "legacy token login not configured");
-        return error_response(StatusCode::NOT_FOUND, "not_supported");
-    };
-    let valid = bcrypt::verify(&req.token, token_hash).unwrap_or(false);
-    if !valid {
-        audit("login", remote, "denied", "invalid admin token");
-        return error_response(StatusCode::UNAUTHORIZED, "invalid_token");
-    }
-    log::warn!(
-        "admin_api: deprecated shared-token login used by {remote}; migrate this client to \
-         key-based enrollment (see docs/ADMIN_PRESENCE_DEVELOPMENT.md)"
-    );
-    match issue_token(&state.jwt_secret) {
-        Ok((access_token, expires_in)) => {
-            audit("login", remote, "granted", "legacy shared-token path");
-            (
-                StatusCode::OK,
-                Json(LoginResponse {
-                    access_token,
-                    token_type: "Bearer",
-                    expires_in,
-                }),
-            )
-                .into_response()
-        }
-        Err(err) => {
-            log::error!("admin_api: failed to issue token: {err}");
-            audit("login", remote, "error", "token issuance failed");
-            error_response(StatusCode::INTERNAL_SERVER_ERROR, "server_error")
-        }
-    }
 }
 
 fn auth_error_status(err: &AuthError) -> StatusCode {
@@ -383,29 +324,22 @@ async fn list_devices(
 }
 
 /// Starts the admin presence API, if configured. Returns `Ok(())` without
-/// binding any socket when neither auth method is configured (no
-/// authorized keys and no legacy `ADMIN_API_TOKEN_HASH`), so the API is
-/// disabled (fail-closed) by default rather than exposing an unauthenticated
-/// or weakly-authenticated endpoint.
+/// binding any socket when no authorized admin keys are enrolled, so the API
+/// is disabled (fail-closed) by default rather than exposing an
+/// unauthenticated endpoint. v2.0.0 removed the legacy shared-token
+/// (`ADMIN_API_TOKEN_HASH`) login entirely — this server only supports
+/// per-client ed25519 challenge-response auth and is not compatible with
+/// pre-2.0.0 admin clients.
 pub(crate) async fn serve(pm: PeerMap, bind_addr: Option<IpAddr>) -> ResultType<()> {
     let keys_path = AdminKeyStore::resolve_default_path();
     let keys = AdminKeyStore::load(&keys_path).map_err(|e| {
         hbb_common::anyhow::anyhow!("failed to load admin key store {}: {e}", keys_path.display())
     })?;
 
-    let token_hash = get_arg_opt("ADMIN_API_TOKEN_HASH").filter(|v| !v.is_empty());
-    if token_hash.is_some() {
+    if keys.is_empty() {
         log::warn!(
-            "ADMIN_API_TOKEN_HASH is set; the legacy shared-token admin login is enabled for \
-             migration. Prefer enrolling clients with `rustdesk-utils genadminkey` (ed25519 \
-             challenge-response) and unset ADMIN_API_TOKEN_HASH once all clients are migrated."
-        );
-    }
-    if token_hash.is_none() && keys.is_empty() {
-        log::warn!(
-            "Admin presence API is disabled: no authorized admin keys and no \
-             ADMIN_API_TOKEN_HASH configured. Enroll a client with \
-             `rustdesk-utils genadminkey <label>` to enable the API."
+            "Admin presence API is disabled: no authorized admin keys enrolled. Enroll a \
+             client with `rustdesk-utils genadminkey <label>` to enable the API."
         );
         return Ok(());
     }
@@ -429,14 +363,12 @@ pub(crate) async fn serve(pm: PeerMap, bind_addr: Option<IpAddr>) -> ResultType<
 
     let state = AdminApiState {
         pm,
-        token_hash: token_hash.map(|v| Arc::from(v.as_str())),
         jwt_secret: Arc::from(jwt_secret.as_str()),
         keys: Arc::new(keys),
         challenges: Arc::new(ChallengeStore::default()),
     };
 
     let app = Router::new()
-        .route(&format!("{ADMIN_API_PATH_PREFIX}/auth/login"), post(login))
         .route(
             &format!("{ADMIN_API_PATH_PREFIX}/auth/challenge"),
             post(auth_challenge),
