@@ -8,6 +8,12 @@
 # Save the private key printed by genadminkey immediately and paste it into the
 # paired rustdeskadmin-client. The server stores only the public key.
 #
+# ADMIN_API_JWT_SECRET and ADMIN_API_PORT below are both optional. Defaults:
+# ADMIN_API_PORT=21114, and an ephemeral JWT secret regenerated on every
+# restart (admin clients just re-login after a restart if you skip it). Set
+# ADMIN_API_JWT_SECRET explicitly only if you want admin sessions to survive
+# routine restarts.
+#
 # The admin API is fail-closed: hbbs only binds port 21114 after it starts with
 # at least one enrolled admin key. The sequence above avoids a first-start-empty
 # restart. If hbbs was already started with zero keys, enroll a key and restart

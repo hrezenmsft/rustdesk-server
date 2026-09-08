@@ -88,6 +88,8 @@ To use a non-default key-store path, either pass it as the optional CLI argument
 
 ### Running locally
 
+Both env vars below are optional (defaults: port `21114`, ephemeral JWT secret). Set them explicitly if you want a fixed port or admin sessions that survive restarts:
+
 ```bash
 export ADMIN_API_JWT_SECRET='<generate-a-long-random-secret>'
 export ADMIN_API_PORT=21114

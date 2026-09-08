@@ -21,7 +21,7 @@ All examples use placeholders such as `<your-domain-or-ip>`, `<label>`, `<finger
   - `21118/tcp`
   - `21119/tcp`
   - `21114/tcp` for the admin API
-- A long random value for `ADMIN_API_JWT_SECRET` (see below — still required in v2.0.0).
+- (Optional) A long random value for `ADMIN_API_JWT_SECRET` — see below for why you may still want to set it.
 - The paired Windows client fork (`rustdeskadmin-client`) ready to receive the private admin key printed by `genadminkey`.
 
 ## Two separate keys you will generate: don't confuse them
@@ -51,12 +51,14 @@ A fresh deployment involves **two unrelated keys**. Mixing them up is the most c
 3. Distribute the **public** key to every ordinary RustDesk client that should trust this server, by setting **Settings > Network > ID/Relay Server > Key** to that base64 public key value (in addition to the ID/Relay Server host/port).
 4. This key has nothing to do with the admin-presence feature — it is the same mechanism every self-hosted RustDesk deployment uses, unmodified by this fork. Losing/rotating it invalidates the trust relationship for **all** connected clients (not just admin clients), so back up `id_ed25519` alongside your other server state.
 
-### Why `ADMIN_API_JWT_SECRET` is still required in v2.0.0
+### `ADMIN_API_JWT_SECRET` and `ADMIN_API_PORT` are both optional
 
-v2.0.0 replaced the *login* mechanism (previously a shared bcrypt token, now per-client ed25519 challenge-response — see `rustdesk-utils genadminkey`), but it did **not** remove the JWT-signed session token issued **after** a successful login. `ADMIN_API_JWT_SECRET` signs and verifies that short-lived (15-minute) bearer token, so it is still required:
+Neither variable is required to run the admin API — both have sane defaults and the server works correctly without setting either:
 
-- If it is unset or empty, `hbbs` logs a warning and falls back to a random secret generated at process start. That works, but every admin client is silently force-logged-out (has to re-run the challenge/verify handshake) on every `hbbs` restart.
-- Set it explicitly to a long random value so admin sessions survive routine restarts:
+- `ADMIN_API_PORT` defaults to `21114` if unset.
+- `ADMIN_API_JWT_SECRET` signs and verifies the short-lived (15-minute) bearer session token issued **after** a successful ed25519 challenge/verify login (see `rustdesk-utils genadminkey`). If it is unset or empty, `hbbs` logs a warning and falls back to a random secret generated at process start. The only practical effect is that admin clients must redo the challenge/verify handshake (a few seconds) after an `hbbs` restart — the admin API itself keeps working normally either way.
+
+Set `ADMIN_API_JWT_SECRET` explicitly only if you want admin sessions to survive routine `hbbs` restarts without a re-login:
   ```bash
   openssl rand -hex 32
   ```
@@ -170,7 +172,9 @@ sudo install -m 0755 hbbr /usr/local/bin/hbbr
 sudo install -m 0755 rustdesk-utils /usr/local/bin/rustdesk-utils
 ```
 
-### Create the environment file
+### Create the environment file (optional)
+
+Both variables below are optional — `hbbs` runs fine with sane defaults if you skip this file entirely (`ADMIN_API_PORT` defaults to `21114`; `ADMIN_API_JWT_SECRET` falls back to an ephemeral secret, meaning admin clients just re-login after a restart). Set them only if you want a fixed port override or admin sessions that survive restarts:
 
 ```bash
 sudo tee /etc/rustdeskadmin/rustdesk.env > /dev/null <<'EOF'
@@ -179,7 +183,7 @@ ADMIN_API_PORT=21114
 EOF
 ```
 
-Add other standard RustDesk server variables to the same file if needed.
+Add other standard RustDesk server variables to the same file if needed. If you don't create this file, remove the `EnvironmentFile=` line from the systemd units below.
 
 ### Create the systemd units
 
@@ -290,6 +294,8 @@ docker volume create rustdesk-data
 
 ### Start the containers
 
+`ADMIN_API_JWT_SECRET` and `ADMIN_API_PORT` are both optional — omit either `-e` flag to use the defaults (`21114` for the port; an ephemeral JWT secret regenerated on every restart, which only means admin clients re-login after a restart). Set `ADMIN_API_JWT_SECRET` explicitly if you want admin sessions to survive container restarts:
+
 ```bash
 docker run -d --name rustdeskadmin-hbbs \
   --restart unless-stopped \
@@ -352,6 +358,8 @@ docker exec rustdeskadmin-hbbs rustdesk-utils listadminkeys
 A ready-to-copy example is kept at the repo root as **`docker-compose.example.yml`**. It uses a named volume, the published classic image, and one container per binary.
 
 ### Example `docker-compose.yml`
+
+`ADMIN_API_JWT_SECRET` and `ADMIN_API_PORT` under `environment:` are both optional — remove either line to use the defaults (port `21114`; an ephemeral JWT secret regenerated on every restart, which only means admin clients re-login after a restart). Set `ADMIN_API_JWT_SECRET` explicitly if you want admin sessions to survive container restarts.
 
 ```yaml
 services:

@@ -28,9 +28,9 @@ This repository is a **public fork of the official [rustdesk/rustdesk-server](ht
 ```bash
 curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
 mv docker-compose.example.yml docker-compose.yml
-# edit docker-compose.yml:
-#   - set hbbs -r <your-domain-or-ip>:21117
-#   - set ADMIN_API_JWT_SECRET to a long random secret
+# edit docker-compose.yml: set hbbs -r <your-domain-or-ip>:21117
+# (optional) set ADMIN_API_JWT_SECRET to a long random secret so admin sessions
+# survive a restart — the admin API works fine without it too.
 docker compose pull
 docker compose run --rm --no-deps hbbs rustdesk-utils genadminkey "<label>"
 # Save the printed private key now and paste it into rustdeskadmin-client.
@@ -52,7 +52,8 @@ cargo build --release
 ./target/release/rustdesk-utils genadminkey "<label>"
 # Save the printed private key now and paste it into rustdeskadmin-client.
 # The server stores the public key in ./admin_authorized_keys.json by default.
-# Start hbbs/hbbr from the same working directory, with ADMIN_API_JWT_SECRET set.
+# Start hbbs/hbbr from the same working directory. ADMIN_API_JWT_SECRET and
+# ADMIN_API_PORT are both optional (sane defaults apply, see below).
 ```
 
 See **[docs/environment-variables.md](docs/environment-variables.md)** for the full list of variables, the file/flag/env precedence rules, database and relay bandwidth tuning, Docker image variables, and examples inherited from upstream RustDesk.
