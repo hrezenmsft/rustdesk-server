@@ -2,7 +2,26 @@
 
 All notable changes to this custom administrator-presence server extension are recorded here.
 
-Entries are grouped by date, newest first. Each dated section corresponds to one or more commits on that date; the `Unreleased` section at the top holds changes not yet committed.
+Entries are grouped by release date, newest first.
+
+## v2.0.0 (2026-09-08)
+
+### Removed
+
+- Removed the legacy shared-token admin-auth path entirely. `ADMIN_API_TOKEN_HASH`, `rustdesk-utils hashtoken`, `rustdesk-utils initadmin`, and `POST /admin/v1/auth/login` are no longer supported by the server. Fresh installs and upgrades must use enrolled admin keys.
+
+### Added
+
+- Added per-client ed25519 challenge-response authentication for the admin API: `POST /admin/v1/auth/challenge` issues a short-lived nonce for an enrolled key, and `POST /admin/v1/auth/verify` validates the detached signature over that nonce before issuing the same short-lived bearer token used by `GET /admin/v1/devices?status=online`.
+- Added the JSON-backed authorized-key store in `src/admin_keys.rs`, using `admin_authorized_keys.json` by default (or `ADMIN_API_KEYS_FILE` when set), with stable public-key fingerprints and per-key metadata.
+- Added the full enrollment CLI in `rustdesk-utils`: `genadminkey <label>`, `listadminkeys`, and `revokeadminkey <fingerprint>`. `genadminkey` prints the private key once for the admin client to import; the server stores only the public key and metadata.
+
+### Changed
+
+- The admin API is now fail-closed on key enrollment: if `hbbs` starts with no enrolled admin keys, it does not bind the admin API port at all. Once started with at least one key, device listing remains on the same separate HTTP port and still returns only least-privilege online-presence data from the in-memory rendezvous peer map.
+- Authorized-key changes now hot-reload live. `AdminKeyStore::refresh_if_stale()` lazily reloads the key file when `find_active()` detects an on-disk mtime change, so enrollments and revocations made through `rustdesk-utils` take effect on the running server without restart after the API is enabled.
+- Confirmed and documented the transport decision to keep the admin API on its existing separate HTTP port instead of reviving dormant protocol message paths such as `HttpProxyRequest` / `HttpProxyResponse` / `KeyExchange`. This preserves the additive, no-protocol-regression design goal for ordinary RustDesk clients.
+- Expanded automated coverage for the v2.0.0 auth model, including end-to-end handler coverage for challenge -> verify -> bearer-gated device listing plus targeted tests for the key store and challenge store.
 
 ## 2026-09-07 17:20 (`06dea1e`, released `v1.1.4`)
 
@@ -38,20 +57,6 @@ Entries are grouped by date, newest first. Each dated section corresponds to one
 
 - Pushing the `v1.1.3` tag triggered **both** an automatic `push`-event workflow run and this session's manual `workflow_dispatch` run (the latter was cancelled once the automatic one was confirmed running) — meaning the fork's previously-restricted automatic tag-push trigger (see the `v1.1.0` entry below) now appears to work without needing the one-time Actions-tab banner dismissal called out there, or that dismissal happened previously without being explicitly confirmed. The `workflow_dispatch` trigger and its ref-based tag resolution remain in the workflow file as a fallback/manual-rerun option and do not need to be removed.
 - The `v1.1.3` run (`34141346900`) completed with all 5 build jobs, all 4 `.deb` package jobs, all Docker push/manifest jobs, and the release job succeeding; the exact-version manifests (`ghcr.io/hrezenmsft/rustdeskadmin-server:v1.1.3` and `-s6:v1.1.3`) were verified present (HTTP 200, `application/vnd.oci.image.index.v1+json`) directly against the GHCR registry API before publishing the release.
-
-## Unreleased
-
-### Changed (v2.0.0 — breaking auth model change)
-
-- **Replaced the single shared bcrypt-hashed admin token with per-client ed25519 challenge-response authentication.** Each admin client now enrolls its own keypair (generated once via `rustdesk-utils genadminkey <label>`) instead of every admin workstation sharing one secret. Rationale: a shared token gives every admin the same blast radius on leak/rotation and has no way to revoke a single compromised client without re-issuing the token to everyone else; per-client keys let an operator revoke exactly one client (`rustdesk-utils revokeadminkey <fingerprint>`) without disturbing any other enrolled admin.
-- New endpoints `POST /admin/v1/auth/challenge` (client presents its base64 raw ed25519 public key, receives a hex nonce + `expires_in`) and `POST /admin/v1/auth/verify` (client returns the nonce plus a base64 detached ed25519 signature over the nonce's UTF-8 bytes) replace `/admin/v1/auth/login` as the primary auth path. Both endpoints fail closed with the same error shape for unknown/revoked keys, so neither can be used to enumerate which keys are registered. On success `/auth/verify` issues the exact same short-lived JWT bearer token `/auth/login` always issued, so `GET /admin/v1/devices` needed zero changes.
-- `POST /admin/v1/auth/login` (shared token) is kept only for migrating an existing v1.x deployment: it now logs a deprecation warning on every use and returns `404 not_supported` unless `ADMIN_API_TOKEN_HASH` is still configured. `serve()` auto-enables the API if *either* at least one authorized key exists *or* the legacy token is configured, so a fresh v2.0.0 install never needs to touch `ADMIN_API_TOKEN_HASH` at all.
-- Added `src/admin_keys.rs`: `AdminKeyStore`, a JSON-file-backed store of authorized ed25519 public keys (add/revoke/list/find active/touch last-used), atomic writes (temp file + rename), and `fingerprint_of()` — a short, stable, non-secret identifier (first 16 bytes of `sha256(pubkey)`, lowercase hex) used everywhere a key needs to be referenced without printing its full base64 value. Revocation is soft-delete (the record and its audit trail are kept, just marked revoked) so `listadminkeys` can still show when and why a key stopped being accepted.
-- Added `src/admin_auth.rs`: `ChallengeStore`, the actual challenge/verify state machine — nonce issuance is scoped to one specific key's fingerprint (a nonce issued for key A can never be redeemed by key B, even if both happen to know the nonce value), nonces are single-use (consumed/removed on the first verify attempt, success or failure) and expire after `CHALLENGE_TTL` (30 seconds).
-- Added three `rustdesk-utils` subcommands (`src/utils.rs`) for the full key lifecycle: `genadminkey <label> [keys-file]` (generates a new keypair, registers the public half, prints the 64-byte private key **once** — this value is never stored server-side and cannot be recovered if lost, matching the same one-time-print convention `initadmin` already used for the legacy token), `listadminkeys [keys-file]` (table of fingerprint/label/created/last-used/revoked status), and `revokeadminkey <fingerprint> [keys-file]`.
-- **Decision, not left open:** an earlier design considered tunnelling the admin API over the existing rendezvous TCP connection using the protocol's dormant `HttpProxyRequest`/`HttpProxyResponse`/`KeyExchange` messages, to avoid a second listening port. Investigation found `KeyExchange` handling does not exist anywhere server-side in this fork (checked `rendezvous_server.rs` and `relay_server.rs`), and the client's `tcp_proxy_request()` requires the server to proactively push an unsolicited `KeyExchange` message first — implementing that would mean pushing a new message onto every connection to the main rendezvous port (`21116`), risking interference with stock/unmodified clients connecting to the same server. **Decision: keep the existing separate-port HTTP admin API from v1.x unchanged as a transport; v2.0.0 only replaces the auth mechanism running over it.** This keeps the "additive, localized, no existing protocol messages changed" constraint intact.
-- `danger_accept_invalid_certs` (client-side, `hbbs_http/http_client.rs`) was reviewed as part of this change and left as-is: it is pre-existing shared upstream infrastructure (also used by `websocket.rs`/`proxy.rs`), gated by a per-URL "already accepted once" TLS-trust cache, not something the admin-presence feature introduced or depends on. The admin client's HTTP calls use Dart's `package:http` directly by default and only fall through to this Rust path when a SOCKS proxy is configured or `enableFlutterHttpOnRust` is set; even then, the new ed25519 signature check is defense-in-depth — a MITM presenting an untrusted certificate still cannot forge a valid signature without the enrolled private key.
-- Full server crate regression: 21/21 tests passing (10 new: 4 for `AdminKeyStore`, 6 for `ChallengeStore`, plus 1 new `admin_api` integration test exercising the full challenge→sign→verify→bearer-gated-device-list path).
 
 ## 2026-09-07 13:35 (`242dd00`, released `v1.1.2`)
 

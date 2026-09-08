@@ -1,98 +1,46 @@
 # Example docker-compose.yml for rustdeskadmin-server.
 #
-# Copy this file to docker-compose.yml, fill in the placeholders below, then run:
+# Copy this file to docker-compose.yml, replace the placeholders, then run:
 #   docker compose pull
+#   docker compose run --rm --no-deps hbbs rustdesk-utils genadminkey "<label>"
 #   docker compose up -d
 #
-# This runs hbbs and hbbr as two SEPARATE containers, matching the official
-# upstream RustDesk deployment pattern (see the plain, unmodified `docker-compose.yml`
-# already at the repo root, which does the same thing against the official
-# rustdesk/rustdesk-server:latest image) — one container per binary, on a
-# dedicated bridge network with explicit port mappings, rather than
-# `network_mode: host`. It uses the "classic" image published to GHCR by this
-# repo's .github/workflows/build.yaml release pipeline
-# (ghcr.io/hrezenmsft/rustdeskadmin-server), a minimal `FROM scratch` image
-# containing only the hbbs/hbbr binaries with no process supervisor — each
-# container runs exactly one of them via `command:`. No local build/toolchain
-# is required.
+# Save the private key printed by genadminkey immediately and paste it into the
+# paired rustdeskadmin-client. The server stores only the public key.
 #
-# NOTE: do NOT use the "-s6" image (ghcr.io/hrezenmsft/rustdeskadmin-server-s6)
-# for a two-container layout like this one. That image bundles an s6-overlay
-# process supervisor that always starts BOTH hbbs and hbbr inside a single
-# container (see docker/rootfs/etc/s6-overlay/s6-rc.d/user/contents.d/). Running
-# it twice, once per intended service, means every container tries to start its
-# own internal copy of both hbbs and hbbr, so the second container fails to bind
-# ports already held by the first. The s6 image is meant to be run as a single
-# all-in-one container instead (`docker run` one instance, no `command:` override).
-#
-# Admin token / JWT secret setup: don't hand-edit ADMIN_API_TOKEN_HASH/ADMIN_API_JWT_SECRET
-# into this file's `environment:` block — every literal `$` in a bcrypt hash would need to
-# be escaped as `$$` for Compose, which is easy to get wrong. Instead, after the first
-# `docker compose up -d` (or even before, once the images exist), run:
-#   docker compose run --rm --no-deps hbbs rustdesk-utils initadmin
-# This generates a fresh admin token + JWT secret, prints the plaintext token ONCE (save it —
-# it cannot be recovered later), and writes ADMIN_API_TOKEN_HASH/ADMIN_API_JWT_SECRET into
-# ./data/.env (mounted below as /root/.env, which hbbs/hbbr already load from their working
-# directory on every start — see src/common.rs::init_args). Then run
-# `docker compose restart hbbs hbbr` to load it. Re-running `initadmin` refuses to overwrite an
-# already-configured token unless you pass `--force` (which invalidates the old token for every
-# already-configured admin client).
-
-networks:
-  rustdesk-net:
-    external: false
+# The admin API is fail-closed: hbbs only binds port 21114 after it starts with
+# at least one enrolled admin key. The sequence above avoids a first-start-empty
+# restart. If hbbs was already started with zero keys, enroll a key and restart
+# hbbs once; later key enroll/revoke changes hot-reload automatically.
 
 services:
   hbbs:
-    container_name: rustdeskadmin-hbbs
     image: ghcr.io/hrezenmsft/rustdeskadmin-server:latest
-    command: hbbs -r your-server-public-ip-or-hostname:21117
+    container_name: rustdeskadmin-hbbs
+    command: hbbs -r <your-domain-or-ip>:21117
+    environment:
+      ADMIN_API_JWT_SECRET: <generate-a-long-random-secret>
+      ADMIN_API_PORT: 21114
     ports:
+      - "21114:21114"
       - "21115:21115"
       - "21116:21116"
       - "21116:21116/udp"
       - "21118:21118"
-      - "21114:21114"   # admin API — keep this behind a firewall/VPN/reverse-proxy,
-                        # never expose directly to the public internet.
     volumes:
-      - ./data:/root
-    # No ADMIN_API_TOKEN_HASH/ADMIN_API_JWT_SECRET here — see the "Admin token / JWT secret
-    # setup" note above. `docker compose run --rm --no-deps hbbs rustdesk-utils initadmin`
-    # writes them into ./data/.env instead, which hbbs loads automatically on startup.
-    networks:
-      - rustdesk-net
-    depends_on:
-      - hbbr
+      - rustdesk-data:/root
     restart: unless-stopped
 
   hbbr:
-    container_name: rustdeskadmin-hbbr
     image: ghcr.io/hrezenmsft/rustdeskadmin-server:latest
+    container_name: rustdeskadmin-hbbr
     command: hbbr
     ports:
       - "21117:21117"
       - "21119:21119"
     volumes:
-      - ./data:/root
-    networks:
-      - rustdesk-net
+      - rustdesk-data:/root
     restart: unless-stopped
 
-# Networking note: this mirrors the upstream pattern exactly (bridge network,
-# explicit port mappings, one binary per container) instead of `network_mode: host`.
-# NAT hole-punching between two RustDesk clients relies on hbbs seeing each
-# client's real source port; Docker's default bridge networking DNATs/rewrites
-# that port, which can break traversal for some client pairs behind strict NATs.
-# If you hit connection issues that only reproduce through this deployment (and
-# not through a bare-metal/systemd or host-networked deployment), switch both
-# services to `network_mode: host` instead of `ports:` (the two are mutually
-# exclusive in Compose) as a troubleshooting step.
-#
-# Migrating an existing server's identity into this deployment: hbbs generates a
-# new id_ed25519/id_ed25519.pub keypair the first time it starts against an empty
-# ./data directory, which changes the server's public key fingerprint and breaks
-# every client that already trusts the old one. Before the first
-# `docker compose up`, copy your existing keypair into ./data first:
-#   mkdir -p ./data
-#   cp /path/to/old/data/id_ed25519 /path/to/old/data/id_ed25519.pub ./data/
-#   docker compose up -d
+volumes:
+  rustdesk-data:
