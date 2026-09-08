@@ -18,6 +18,11 @@
 # at least one enrolled admin key. The sequence above avoids a first-start-empty
 # restart. If hbbs was already started with zero keys, enroll a key and restart
 # hbbs once; later key enroll/revoke changes hot-reload automatically.
+#
+# Security: hbbs serves the admin API directly over HTTP. Do not expose 21114
+# on the public internet as plain HTTP. Prefer HTTPS termination in front of the
+# admin API, or restrict 21114 to trusted VPN/source IPs. See
+# docs/DEPLOYMENT.md#admin-api-transport-security.
 
 services:
   hbbs:

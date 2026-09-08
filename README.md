@@ -40,6 +40,8 @@ Use `docker compose exec hbbs rustdesk-utils listadminkeys` to verify enrollment
 
 See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the full Linux deployment walkthroughs and **[docs/ADMIN_PRESENCE_DEVELOPMENT.md](docs/ADMIN_PRESENCE_DEVELOPMENT.md)** for source-level details — or grab packages directly from the **[Releases page](https://github.com/hrezenmsft/rustdeskadmin-server/releases)**.
 
+Security note: the admin API is authenticated but administrative. If it is reachable beyond a trusted private network, deploy it behind HTTPS termination or restrict `ADMIN_API_PORT` to trusted VPN/source IPs. Direct HTTP on the public internet is not recommended because short-lived bearer tokens and device-presence metadata can be observed or tampered with. See **[docs/DEPLOYMENT.md#admin-api-transport-security](docs/DEPLOYMENT.md#admin-api-transport-security)**.
+
 Building from source instead:
 
 ```bash

@@ -20,9 +20,61 @@ All examples use placeholders such as `<your-domain-or-ip>`, `<label>`, `<finger
   - `21117/tcp`
   - `21118/tcp`
   - `21119/tcp`
-  - `21114/tcp` for the admin API
+  - `21114/tcp` for the admin API, after choosing a secure exposure model below
 - (Optional) A long random value for `ADMIN_API_JWT_SECRET` — see below for why you may still want to set it.
 - The paired Windows client fork (`rustdeskadmin-client`) ready to receive the private admin key printed by `genadminkey`.
+
+## Admin API transport security
+
+The admin API is authenticated, but it is still an administrative interface. Choose the transport and firewall model deliberately before exposing `ADMIN_API_PORT` outside the host.
+
+By default, `hbbs` listens for the admin API directly on HTTP. The ed25519 admin-key flow does **not** send the admin private key to the server, but plain HTTP still exposes sensitive traffic to anyone who can observe or modify the network path:
+
+- the short-lived bearer/JWT token issued after a successful challenge/verify login can be captured and replayed until it expires;
+- online device IDs, optional hostnames, and last-seen metadata can be read from responses;
+- responses can be tampered with, which can hide real devices or inject misleading device data;
+- the admin client cannot cryptographically verify that it is talking to the intended server;
+- an internet-exposed admin port receives more scanning, brute-force attempts, log noise, and attack-surface pressure.
+
+Recommended exposure models, from strongest to weakest:
+
+| Model | Recommendation |
+| --- | --- |
+| DNS name + HTTPS reverse proxy | Preferred for internet access. Put Nginx, Caddy, another TLS terminator, or a trusted load balancer in front of the admin API using a normal public CA certificate. Bind `hbbs` to a private/admin backend port if your network layout supports it, or firewall the backend so only the proxy can reach it. |
+| VPN or trusted source allowlist | Good when admins can connect through WireGuard, Tailscale, a bastion, or fixed trusted IPs. Expose `ADMIN_API_PORT` only to those sources with host firewall and cloud firewall rules. |
+| Self-signed IP certificate behind a reverse proxy | Acceptable for direct-IP deployments when no DNS name exists. Generate a certificate with `subjectAltName=IP:<server-ip>`, configure the admin client/OS to trust it, and protect the private key on the server. |
+| Direct HTTP on a trusted private network | Usable only when the network path is already trusted and isolated. Do not use this for general internet exposure. |
+| Direct HTTP on the public internet | Not recommended. Authentication still works, but bearer tokens and device-presence metadata are exposed to passive observers and active network attackers. |
+
+### Example: HTTPS with a reverse proxy
+
+One common pattern is to keep the public admin port encrypted while forwarding to a local-only backend:
+
+```text
+https://<admin-host-or-ip>:21114 -> TLS reverse proxy -> http://127.0.0.1:21124 -> hbbs admin API
+```
+
+Set `hbbs` to use the backend port:
+
+```bash
+ADMIN_API_PORT=21124
+```
+
+Then configure your reverse proxy to listen on the public `21114/tcp` endpoint and proxy only `/admin/` to `http://127.0.0.1:21124`. Keep `21124/tcp` blocked from untrusted networks.
+
+If you use a self-signed certificate for a bare IP address, the certificate must include the IP address as a Subject Alternative Name:
+
+```bash
+openssl req -x509 -nodes -newkey rsa:2048 -days 825 \
+  -keyout rustdesk-admin.key \
+  -out rustdesk-admin.crt \
+  -subj "/CN=<server-ip>" \
+  -addext "subjectAltName=IP:<server-ip>" \
+  -addext "keyUsage=digitalSignature,keyEncipherment" \
+  -addext "extendedKeyUsage=serverAuth"
+```
+
+Import that certificate into the admin client's trusted root store, or configure the client to trust that certificate specifically. Without that trust step, the client should reject the self-signed certificate.
 
 ## Two separate keys you will generate: don't confuse them
 
@@ -269,7 +321,7 @@ curl -i http://127.0.0.1:21114/admin/v1/devices?status=online
 sudo journalctl -u rustdesk-hbbs -f
 ```
 
-After the client authenticates, `journalctl` should show the `admin_api audit` lines for challenge, verify, and device listing.
+The `curl` command above is a local HTTP health check. Use HTTPS or a trusted-network allowlist for remote admin clients as described in [Admin API transport security](#admin-api-transport-security). After the client authenticates, `journalctl` should show the `admin_api audit` lines for challenge, verify, and device listing.
 
 ### Revoke a key
 
@@ -342,7 +394,7 @@ curl -i http://127.0.0.1:21114/admin/v1/devices?status=online
 docker logs -f rustdeskadmin-hbbs
 ```
 
-Use the printed private key in the client fork. Successful client activity should create `admin_api audit` log lines with `auth_challenge`, `auth_verify`, and `list_devices` actions.
+The `curl` command above is a local HTTP health check. Use HTTPS or a trusted-network allowlist for remote admin clients as described in [Admin API transport security](#admin-api-transport-security). Use the printed private key in the client fork. Successful client activity should create `admin_api audit` log lines with `auth_challenge`, `auth_verify`, and `list_devices` actions.
 
 ### Revoke a key
 
@@ -428,13 +480,14 @@ curl -i http://127.0.0.1:21114/admin/v1/devices?status=online
 docker compose logs -f hbbs
 ```
 
-Once the client uses the printed private key, `hbbs` logs should include the `admin_api audit` actions for challenge, verify, and device listing.
+The `curl` command above is a local HTTP health check. Use HTTPS or a trusted-network allowlist for remote admin clients as described in [Admin API transport security](#admin-api-transport-security). Once the client uses the printed private key, `hbbs` logs should include the `admin_api audit` actions for challenge, verify, and device listing.
 
 ---
 
 ## Operational notes
 
-- Keep the admin API behind HTTPS termination and appropriate network restrictions before exposing it beyond a trusted network.
+- Keep the admin API behind HTTPS termination or strict source/network restrictions before exposing it beyond a trusted network.
+- The ordinary RustDesk ports (`21115`-`21119`) are raw RustDesk server ports and are not normally routed through an HTTP reverse proxy. Apply the admin API TLS/proxy guidance specifically to `ADMIN_API_PORT`.
 - `GET /admin/v1/devices?status=online` only reports presence from the same rendezvous server instance; point the admin client at the same RustDesk server the endpoints use.
 - The admin API does not expose direct DB, file, or log browsing to clients.
 - Revoke one compromised client with `revokeadminkey <fingerprint>` instead of redistributing shared secrets; there are no shared admin tokens in v2.0.0.
