@@ -28,6 +28,8 @@ All examples use placeholders such as `<your-domain-or-ip>`, `<label>`, `<finger
 
 The admin API is authenticated, but it is still an administrative interface. Choose the transport and firewall model deliberately before exposing `ADMIN_API_PORT` outside the host.
 
+**Client behavior (rustdeskadmin-client v2.2.0+):** every admin API request from the Windows client automatically tries `https://` first and only falls back to plain `http://` when the HTTPS attempt fails at the transport level (TLS handshake error, connection refused, timeout) — a real HTTP response (4xx/5xx) is never retried, since that means the scheme itself worked. There is no user-facing scheme setting. The client shows a padlock icon next to the online-device count: locked/green means the last successful request used HTTPS; open/orange means it fell back to plain HTTP. **The client does not implement any custom certificate pinning or trust-prompt UI** — a self-signed or otherwise untrusted certificate simply fails the TLS handshake silently and falls back to HTTP (visible via the open padlock), it is not rejected/blocked outright. To make the client actually use HTTPS with a self-signed certificate, you must import that certificate into each Windows admin machine's OS trust store (see below) so the client's underlying TLS stack accepts it during the handshake.
+
 By default, `hbbs` listens for the admin API directly on HTTP. The ed25519 admin-key flow does **not** send the admin private key to the server, but plain HTTP still exposes sensitive traffic to anyone who can observe or modify the network path:
 
 - the short-lived bearer/JWT token issued after a successful challenge/verify login can be captured and replayed until it expires;
@@ -74,7 +76,16 @@ openssl req -x509 -nodes -newkey rsa:2048 -days 825 \
   -addext "extendedKeyUsage=serverAuth"
 ```
 
-Import that certificate into the admin client's trusted root store, or configure the client to trust that certificate specifically. Without that trust step, the client should reject the self-signed certificate.
+Import that certificate into each Windows admin client machine's local machine trust store — this is required for the client to actually use HTTPS, since it has no custom trust logic of its own:
+
+```powershell
+# Copy rustdesk-admin.crt to the client machine first, then run as Administrator:
+Import-Certificate -FilePath ".\rustdesk-admin.crt" -CertStoreLocation Cert:\LocalMachine\Root
+# or, using certutil:
+certutil -addstore Root ".\rustdesk-admin.crt"
+```
+
+Restart `rustdesk.exe` on the client afterward and confirm the padlock icon next to the online-device count in the Admin online devices pane shows locked/green (HTTPS) rather than open/orange (HTTP fallback). Without this import step, the client's HTTPS attempt will fail the TLS handshake and it will silently fall back to plain HTTP — it will not show an error, just the open padlock — so always check the padlock after any certificate change.
 
 ## Two separate keys you will generate: don't confuse them
 
