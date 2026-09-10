@@ -8,6 +8,16 @@ This guide covers three Linux deployment modes for this fork:
 
 All examples use placeholders such as `<your-domain-or-ip>`, `<label>`, `<fingerprint>`, and `<generate-a-long-random-secret>`. Replace them with your own values before use.
 
+## Release availability — PREPARING v2.0.1
+
+GitHub Latest is still **v2.0.0**. The approved **2.0.1** patch is not yet published and must ship from source matching tag **`v2.0.1`**, with product name **RustDeskAdmin Server - RustDesk Fork**, upstream copyright retained, and Henrique Rezende's attribution added.
+
+The planned assets are `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. Only Linux amd64 is in this patch release; no Windows, ARM, 32-bit, or `RustDeskDeploy.exe` wrapper assets are planned. Internal executable/package/service names and enrollment behavior stay compatible.
+
+The Docker examples below describe existing-image deployment, **not** a v2.0.1 image release. The current local image/deployment stays **`rustdeskadmin-server:2.0.0`** unchanged. Do not infer an image upgrade from the package version.
+
+After publication as Latest, verify all four new downloads before removing the 17 old v2.0.0 assets, including ARM/32-bit/Windows assets. Keep the old tag/source archives. Until then use the currently published asset list, not the pending URLs below.
+
 > The admin API is **fail-closed**. `hbbs` only listens on `ADMIN_API_PORT` after it starts with at least one enrolled admin key. If you enroll the first key after `hbbs` already started empty, restart `hbbs` once. After that, later enroll/revoke operations hot-reload live with no restart.
 
 ## Common prerequisites
@@ -196,14 +206,18 @@ Choose **one** of the following.
 
 #### Option A: download a release package
 
+The following is the **v2.0.1 postpublication** command; do not run it until the release is published and its downloads verified. For current v2.0.0 packages, select the exact asset name from that release rather than assuming the new naming convention.
+
 ```bash
-TAG=<tag>
-ARCH=<arch-zip-suffix>
+TAG=v2.0.1
+VERSION=2.0.1
 mkdir -p "$HOME/rustdeskadmin-release"
 cd "$HOME/rustdeskadmin-release"
-curl -LO "https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/${TAG}/rustdesk-server-linux-${ARCH}.zip"
-unzip "rustdesk-server-linux-${ARCH}.zip"
+curl -fLO "https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/${TAG}/rustdeskadmin-server-${VERSION}-linux-amd64.zip"
+unzip "rustdeskadmin-server-${VERSION}-linux-amd64.zip"
 ```
+
+Alternatively, after publication download the three matching `rustdesk-server-{hbbs,hbbr,utils}_2.0.1_amd64.deb` assets for a Debian-based amd64 host. Back up existing configuration and keys before any package upgrade. The steps below describe the manual ZIP/systemd layout; do not mix that layout with a package-managed installation.
 
 Expected extracted binaries:
 

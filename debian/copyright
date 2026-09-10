@@ -1,7 +1,8 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: rustdesk-server
+Upstream-Name: RustDeskAdmin Server (RustDesk fork)
 Files: *
 Copyright: Copyright 2022 open-trade <info@rustdesk.com>
+           Copyright 2026 Henrique Rezende (RustDeskAdmin fork)
 License: AGPL-3.0
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU Affero General Public License as published by

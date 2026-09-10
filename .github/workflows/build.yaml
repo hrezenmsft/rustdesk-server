@@ -211,12 +211,14 @@ jobs:
         run: |
           sudo apt update
           DEBIAN_FRONTEND=noninteractive sudo apt install -y zip
+          cp RELEASE-NOTICE.txt ${{ matrix.job.name }}/
           zip ${{ matrix.job.name }}/rustdesk-server-${{ matrix.job.os }}-${{ matrix.job.name }}${{ matrix.job.suffix }}.zip ${{ matrix.job.name }}/*
 
       - name: Create Release (${{ matrix.job.os }} - (${{ matrix.job.name }})
         uses: softprops/action-gh-release@v1
         with:
           draft: true
+          name: RustDeskAdmin Server - RustDesk Fork ${{ github.ref_name }}
           files: ${{ matrix.job.name }}/rustdesk-server-${{ matrix.job.os }}-${{ matrix.job.name }}${{ matrix.job.suffix }}.zip
             
   # docker build and push of single-arch images
@@ -553,6 +555,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           draft: true
+          name: RustDeskAdmin Server - RustDesk Fork ${{ github.ref_name }}
           files: |
             debian-build/rustdesk-server-hbbr_*_${{ matrix.job.debian_platform }}.deb
             debian-build/rustdesk-server-hbbs_*_${{ matrix.job.debian_platform }}.deb

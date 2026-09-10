@@ -29,7 +29,17 @@ rustdeskadmin-server/
 
 Keep `upstream` fetch-only (or disable its push URL). Push only to the fork.
 
-## 3. Current server state (v2.0.0)
+## 3. Current server state (PREPARING v2.0.1)
+
+GitHub Latest remains **v2.0.0**. The approved **2.0.1** branding/version patch is not published; source metadata, binary/package versions, and tag **`v2.0.1`** must agree before release.
+
+- Display product: **RustDeskAdmin Server - RustDesk Fork**; retain upstream copyright and add Henrique Rezende.
+- Expected assets: `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`.
+- Build the Linux amd64 server binaries once and reuse that exact output for ZIP and all three Debian packages. Run server and client builds sequentially.
+- Keep `hbbs`, `hbbr`, `rustdesk-utils`, package/service names, and the v2.0.0 admin API contract. No Windows, ARM, or 32-bit release assets and no `RustDeskDeploy.exe` wrapper are approved for this patch.
+- The existing local Docker deployment/image remains **`rustdeskadmin-server:2.0.0`**; do not rebuild/redeploy it or claim a v2.0.1 image upgrade. New GHCR image publication is not part of this package release.
+- Publish as Latest only after verifying source/artifact identity. Verify all four new downloads **before** removing the 17 old v2.0.0 assets, including ARM/32-bit/Windows packages; retain its tag and source archives. The client independently prepares v2.2.1 and a three-asset cleanup of v2.2.0.
+- After publication/download verification, finalize README, deployment/development guides, changelog, this handoff, and shared local memory. Until then keep the PREPARING state.
 
 ### Authentication model
 

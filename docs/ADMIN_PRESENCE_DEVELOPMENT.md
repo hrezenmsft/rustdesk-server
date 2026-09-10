@@ -6,7 +6,22 @@ This fork adds an authenticated, administrator-only presence API to `hbbs` so th
 
 The admin pane is a discovery surface only. Selecting a device still uses RustDesk's normal, unmodified connection flow and does **not** bypass passwords, consent dialogs, permissions, ACLs, or unattended-access rules.
 
-## Current server contract (v2.0.0)
+## Approved patch release: 2.0.1 (PREPARING)
+
+GitHub Latest remains **v2.0.0**; the **2.0.1** patch is not published. Align source, executable, and package versions with tag **`v2.0.1`** before building; the tag must identify the actual source commit used for the artifacts. Product name: **RustDeskAdmin Server - RustDesk Fork**. Retain upstream copyright and add Henrique Rezende's attribution, preserving internal `hbbs`, `hbbr`, `rustdesk-utils`, package, and service names.
+
+Build the Linux amd64 server binaries once, then reuse that same output for:
+
+- `rustdeskadmin-server-2.0.1-linux-amd64.zip`
+- `rustdesk-server-hbbs_2.0.1_amd64.deb`
+- `rustdesk-server-hbbr_2.0.1_amd64.deb`
+- `rustdesk-server-utils_2.0.1_amd64.deb`
+
+Run client and server application builds sequentially, not concurrently; do not rebuild per package format. Preserve attribution/release notices, verify packaged binary versions and Debian metadata, and ensure no private runtime state enters a package. Do not include Windows/ARM/32-bit assets or `RustDeskDeploy.exe`.
+
+The local Docker image/deployment stays **`rustdeskadmin-server:2.0.0`**, unchanged; these packages do not imply new GHCR images. After publishing the verified patch as Latest, verify all four downloads before deleting the 17 old v2.0.0 release assets (including ARM/32-bit/Windows outputs). Preserve old tags/source archives. Finalize documentation status only after that verification.
+
+## Current server contract (introduced in v2.0.0; unchanged for v2.0.1)
 
 - Auth model: **per-client ed25519 challenge-response only**.
 - Routes:

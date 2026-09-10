@@ -11,11 +11,11 @@
 ####################################################################
 # File Info
 
-!define APP_NAME "RustDeskServer"
+!define APP_NAME "RustDeskAdmin Server - RustDesk Fork"
 !define PRODUCT_NAME "rustdesk_server"
-!define PRODUCT_DESCRIPTION "Installer for ${PRODUCT_NAME}"
-!define COPYRIGHT "Copyright © 2021"
-!define VERSION "1.1.17"
+!define PRODUCT_DESCRIPTION "RustDeskAdmin self-hosted server, a fork of RustDesk."
+!define COPYRIGHT "Copyright © 2022 open-trade <info@rustdesk.com>. Copyright © 2026 Henrique Rezende. RustDeskAdmin fork by Henrique Rezende. Based on RustDesk; upstream copyright notices retained."
+!define VERSION "2.0.1"
 
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "${PRODUCT_NAME}"

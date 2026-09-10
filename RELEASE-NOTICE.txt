@@ -1,0 +1,10 @@
+RustDeskAdmin Server - RustDesk Fork
+
+Copyright (C) 2022 open-trade <info@rustdesk.com>
+Copyright (C) 2026 Henrique Rezende
+
+RustDeskAdmin Server is a fork of RustDesk Server. It is distributed under the
+GNU Affero General Public License, version 3. Upstream RustDesk copyright
+notices and third-party license notices are retained in their respective files.
+
+Source: https://github.com/hrezenmsft/rustdeskadmin-server

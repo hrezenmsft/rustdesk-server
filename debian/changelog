@@ -1,6 +1,16 @@
-rustdesk-server (1.1.17) UNRELEASED; urgency=medium
+rustdesk-server (2.0.1) stable; urgency=medium
+
+  * Publish fork version and copyright metadata with matching release sources.
+  * Package Linux amd64 binaries as a ZIP and hbbs, hbbr, and utilities DEBs.
+
+ -- Henrique Rezende <hrezenmsft@users.noreply.github.com>  Thu, 10 Sep 2026 18:52:00 -0300
+
+rustdesk-server (2.0.0) UNRELEASED; urgency=medium
 
   * Fix more UDP reflection/amplification
+  * Brand release packages as RustDeskAdmin, a RustDesk fork by Henrique Rezende.
+
+ -- Henrique Rezende <hrezenmsft@users.noreply.github.com>  Thu, 10 Sep 2026 11:57:00 -0300
 
 rustdesk-server (1.1.16) UNRELEASED; urgency=medium
 

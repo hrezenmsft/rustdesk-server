@@ -4,6 +4,16 @@ All notable changes to this custom administrator-presence server extension are r
 
 Entries are grouped by release date, newest first.
 
+## v2.0.1 — PREPARING (2026-09-10, not published)
+
+### Planned release metadata and packaging
+
+- Align source, binaries, and package metadata to **2.0.1**, matching tag **`v2.0.1`**.
+- Use product name **RustDeskAdmin Server - RustDesk Fork**, retaining upstream copyright and adding Henrique Rezende's fork attribution; preserve `hbbs`, `hbbr`, `rustdesk-utils`, and existing package/service names.
+- Build Linux amd64 binaries once and reuse the output for `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. No Windows/ARM/32-bit assets or `RustDeskDeploy.exe` wrapper are part of this patch.
+- GitHub Latest remains **v2.0.0** until publication. Verify all new downloads before removing the 17 old v2.0.0 binary/package assets, including ARM/32-bit/Windows outputs; retain the old tag and source archives.
+- The local Docker image/deployment remains **`rustdeskadmin-server:2.0.0`** unchanged. This patch does not claim new GHCR images or a change to the existing admin API/connection behavior.
+
 ## v2.0.0 (2026-09-08)
 
 ### Removed
