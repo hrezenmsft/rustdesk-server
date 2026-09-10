@@ -6,9 +6,9 @@ This fork adds an authenticated, administrator-only presence API to `hbbs` so th
 
 The admin pane is a discovery surface only. Selecting a device still uses RustDesk's normal, unmodified connection flow and does **not** bypass passwords, consent dialogs, permissions, ACLs, or unattended-access rules.
 
-## Approved patch release: 2.0.1 (PREPARING)
+## Release v2.0.1
 
-GitHub Latest remains **v2.0.0**; the **2.0.1** patch is not published. Align source, executable, and package versions with tag **`v2.0.1`** before building; the tag must identify the actual source commit used for the artifacts. Product name: **RustDeskAdmin Server - RustDesk Fork**. Retain upstream copyright and add Henrique Rezende's attribution, preserving internal `hbbs`, `hbbr`, `rustdesk-utils`, package, and service names.
+Release **v2.0.1** uses source/package version **2.0.1**. Check the [release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published assets. The designated Linux amd64 musl build commit is `961d0886ee48ffc884d0186b25574070daca7fcb`. The final tag may include documentation-only follow-up commits; runtime/build/package source must remain identical to the build commit. Product name: **RustDeskAdmin Server - RustDesk Fork**. Retain upstream copyright and add Henrique Rezende's attribution, preserving internal `hbbs`, `hbbr`, `rustdesk-utils`, package, and service names.
 
 Build the Linux amd64 server binaries once, then reuse that same output for:
 
@@ -17,9 +17,11 @@ Build the Linux amd64 server binaries once, then reuse that same output for:
 - `rustdesk-server-hbbr_2.0.1_amd64.deb`
 - `rustdesk-server-utils_2.0.1_amd64.deb`
 
-Run client and server application builds sequentially, not concurrently; do not rebuild per package format. Preserve attribution/release notices, verify packaged binary versions and Debian metadata, and ensure no private runtime state enters a package. Do not include Windows/ARM/32-bit assets or `RustDeskDeploy.exe`.
+Run client and server application builds sequentially, not concurrently; do not rebuild per package format. The ZIP contains `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`. Preserve attribution/release notices, verify packaged binary versions and Debian metadata, and ensure no private runtime state enters a package. Do not include Windows/ARM/32-bit assets or `RustDeskDeploy.exe`.
 
-The local Docker image/deployment stays **`rustdeskadmin-server:2.0.0`**, unchanged; these packages do not imply new GHCR images. After publishing the verified patch as Latest, verify all four downloads before deleting the 17 old v2.0.0 release assets (including ARM/32-bit/Windows outputs). Preserve old tags/source archives. Finalize documentation status only after that verification.
+The release uses the static `x86_64-unknown-linux-musl` build. Package its already-stripped binaries with `DEB_BUILD_OPTIONS=nostrip debuild -i -us -uc -b -aamd64` in the Debian staging tree. This prevents debhelper from rewriting them and preserves byte-for-byte identity between the ZIP, DEBs, and build output.
+
+The local Docker image/deployment stays **`rustdeskadmin-server:2.0.0`**, unchanged; these packages do not imply new GHCR images. Retirement of the 17 old v2.0.0 release assets (including ARM/32-bit/Windows outputs) is pending: publish the verified patch as Latest and verify all four downloads before deleting them. Preserve old tags/source archives and record actual completion only after verification.
 
 ## Current server contract (introduced in v2.0.0; unchanged for v2.0.1)
 

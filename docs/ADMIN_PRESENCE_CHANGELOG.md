@@ -4,14 +4,14 @@ All notable changes to this custom administrator-presence server extension are r
 
 Entries are grouped by release date, newest first.
 
-## v2.0.1 — PREPARING (2026-09-10, not published)
+## v2.0.1 (2026-09-10)
 
-### Planned release metadata and packaging
+### Release metadata and packaging
 
-- Align source, binaries, and package metadata to **2.0.1**, matching tag **`v2.0.1`**.
+- Source and package version: **2.0.1**. Designated build commit: `961d0886ee48ffc884d0186b25574070daca7fcb`; the final `v2.0.1` tag may add documentation-only changes without altering runtime/build/package source.
 - Use product name **RustDeskAdmin Server - RustDesk Fork**, retaining upstream copyright and adding Henrique Rezende's fork attribution; preserve `hbbs`, `hbbr`, `rustdesk-utils`, and existing package/service names.
-- Build Linux amd64 binaries once and reuse the output for `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. No Windows/ARM/32-bit assets or `RustDeskDeploy.exe` wrapper are part of this patch.
-- GitHub Latest remains **v2.0.0** until publication. Verify all new downloads before removing the 17 old v2.0.0 binary/package assets, including ARM/32-bit/Windows outputs; retain the old tag and source archives.
+- Build Linux amd64 binaries once and reuse the output for `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. ZIP contents: `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`. No Windows/ARM/32-bit assets or `RustDeskDeploy.exe` wrapper are part of this patch.
+- Consult the [v2.0.1 release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published downloads. Retirement of the 17 old v2.0.0 binary/package assets, including ARM/32-bit/Windows outputs, is pending publication and verification of the new downloads; retain the old tag and source archives.
 - The local Docker image/deployment remains **`rustdeskadmin-server:2.0.0`** unchanged. This patch does not claim new GHCR images or a change to the existing admin API/connection behavior.
 
 ## v2.0.0 (2026-09-08)

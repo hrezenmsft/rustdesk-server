@@ -2,15 +2,15 @@
 
 This repository is a **public fork of the official [rustdesk/rustdesk-server](https://github.com/rustdesk/rustdesk-server)**, part of the `RustDeskAdmin` project (paired with [`rustdeskadmin-client`](https://github.com/hrezenmsft/rustdeskadmin-client)). This README documents only the administrator-presence additions in this fork.
 
-### Patch release status — PREPARING v2.0.1
+### Release v2.0.1
 
-The approved server patch is **2.0.1**, with source versions and release tag required to match **`v2.0.1`**. It is not published yet; GitHub Latest remains **v2.0.0**.
+Release **v2.0.1** packages the **2.0.1** server. Check the [v2.0.1 release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published asset availability. The designated build commit is `961d0886ee48ffc884d0186b25574070daca7fcb`; the final tag may add documentation-only changes without changing runtime/build/package source.
 
 - Product name: **RustDeskAdmin Server - RustDesk Fork**. Preserve upstream copyright notices and add Henrique Rezende's fork attribution.
-- Planned Linux amd64 assets: `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`.
+- Linux amd64 asset set: `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. The ZIP contains `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`.
 - Keep `hbbs`, `hbbr`, `rustdesk-utils`, package/service names, and the existing admin API contract for compatibility. No Windows/ARM/32-bit assets or `RustDeskDeploy.exe` wrapper are part of this patch release.
 - This package release does **not** upgrade the existing local Docker image/deployment (`rustdeskadmin-server:2.0.0`) or promise new GHCR images.
-- After the new release becomes Latest and all four new downloads are verified, remove the 17 binary/package assets from old **v2.0.0**, including ARM, 32-bit, and Windows assets. Keep the old tag and source archives.
+- Retirement of the 17 binary/package assets from old **v2.0.0**, including ARM, 32-bit, and Windows assets, remains pending publication as Latest and verification of all four new downloads. Keep the old tag and source archives.
 
 ### What this fork adds
 
@@ -34,7 +34,7 @@ The approved server patch is **2.0.1**, with source versions and release tag req
 
 ### Quick start
 
-**Recommended: deploy from a prebuilt release package — no local build required.** Select a published asset from the Releases page; v2.0.1's four Linux amd64 packages are still being prepared. Docker Compose remains an alternative using previously published GHCR images, not a v2.0.1 image upgrade. Existing-image quick start:
+**Recommended: deploy from a prebuilt release package — no local build required.** Select a published Linux amd64 asset from the [v2.0.1 release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1), following the [deployment guide](docs/DEPLOYMENT.md). Docker Compose remains an alternative using previously published GHCR images, not a v2.0.1 image upgrade. Existing-image quick start:
 ```bash
 curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
 mv docker-compose.example.yml docker-compose.yml

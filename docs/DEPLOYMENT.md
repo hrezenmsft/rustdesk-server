@@ -8,15 +8,15 @@ This guide covers three Linux deployment modes for this fork:
 
 All examples use placeholders such as `<your-domain-or-ip>`, `<label>`, `<fingerprint>`, and `<generate-a-long-random-secret>`. Replace them with your own values before use.
 
-## Release availability — PREPARING v2.0.1
+## Release v2.0.1
 
-GitHub Latest is still **v2.0.0**. The approved **2.0.1** patch is not yet published and must ship from source matching tag **`v2.0.1`**, with product name **RustDeskAdmin Server - RustDesk Fork**, upstream copyright retained, and Henrique Rezende's attribution added.
+Release **v2.0.1** packages server version **2.0.1**, with product name **RustDeskAdmin Server - RustDesk Fork**, upstream copyright retained, and Henrique Rezende's attribution added. Check the [v2.0.1 release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published asset availability before using the package commands below. The designated build commit is `961d0886ee48ffc884d0186b25574070daca7fcb`; the final tag may include documentation-only changes without altering runtime/build/package source.
 
-The planned assets are `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. Only Linux amd64 is in this patch release; no Windows, ARM, 32-bit, or `RustDeskDeploy.exe` wrapper assets are planned. Internal executable/package/service names and enrollment behavior stay compatible.
+The asset set is `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. Only Linux amd64 is in this patch release; no Windows, ARM, 32-bit, or `RustDeskDeploy.exe` wrapper assets are included. Internal executable/package/service names and enrollment behavior stay compatible.
 
 The Docker examples below describe existing-image deployment, **not** a v2.0.1 image release. The current local image/deployment stays **`rustdeskadmin-server:2.0.0`** unchanged. Do not infer an image upgrade from the package version.
 
-After publication as Latest, verify all four new downloads before removing the 17 old v2.0.0 assets, including ARM/32-bit/Windows assets. Keep the old tag/source archives. Until then use the currently published asset list, not the pending URLs below.
+Retirement of the 17 old v2.0.0 assets, including ARM/32-bit/Windows assets, is pending publication as Latest and verification of all four new downloads. Keep the old tag/source archives.
 
 > The admin API is **fail-closed**. `hbbs` only listens on `ADMIN_API_PORT` after it starts with at least one enrolled admin key. If you enroll the first key after `hbbs` already started empty, restart `hbbs` once. After that, later enroll/revoke operations hot-reload live with no restart.
 
@@ -206,7 +206,7 @@ Choose **one** of the following.
 
 #### Option A: download a release package
 
-The following is the **v2.0.1 postpublication** command; do not run it until the release is published and its downloads verified. For current v2.0.0 packages, select the exact asset name from that release rather than assuming the new naming convention.
+The following commands target **v2.0.1** and require its published ZIP asset. Confirm availability on the [release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) and verify the download against the release's checksum before installation.
 
 ```bash
 TAG=v2.0.1
@@ -217,14 +217,15 @@ curl -fLO "https://github.com/hrezenmsft/rustdeskadmin-server/releases/download/
 unzip "rustdeskadmin-server-${VERSION}-linux-amd64.zip"
 ```
 
-Alternatively, after publication download the three matching `rustdesk-server-{hbbs,hbbr,utils}_2.0.1_amd64.deb` assets for a Debian-based amd64 host. Back up existing configuration and keys before any package upgrade. The steps below describe the manual ZIP/systemd layout; do not mix that layout with a package-managed installation.
+Alternatively, select the three matching published `rustdesk-server-{hbbs,hbbr,utils}_2.0.1_amd64.deb` assets for a Debian-based amd64 host. Back up existing configuration and keys before any package upgrade. The steps below describe the manual ZIP/systemd layout; do not mix that layout with a package-managed installation.
 
-Expected extracted binaries:
+Expected ZIP contents:
 
 ```text
 hbbs
 hbbr
 rustdesk-utils
+RELEASE-NOTICE.txt
 ```
 
 #### Option B: build from source

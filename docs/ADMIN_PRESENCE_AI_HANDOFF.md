@@ -29,17 +29,17 @@ rustdeskadmin-server/
 
 Keep `upstream` fetch-only (or disable its push URL). Push only to the fork.
 
-## 3. Current server state (PREPARING v2.0.1)
+## 3. Release v2.0.1
 
-GitHub Latest remains **v2.0.0**. The approved **2.0.1** branding/version patch is not published; source metadata, binary/package versions, and tag **`v2.0.1`** must agree before release.
+Release **v2.0.1** packages the **2.0.1** branding/version patch. Consult the [release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published asset availability. The designated Linux amd64 musl build commit is `961d0886ee48ffc884d0186b25574070daca7fcb`; the final tag may add documentation-only follow-up changes while retaining identical runtime/build/package source.
 
 - Display product: **RustDeskAdmin Server - RustDesk Fork**; retain upstream copyright and add Henrique Rezende.
 - Expected assets: `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`.
-- Build the Linux amd64 server binaries once and reuse that exact output for ZIP and all three Debian packages. Run server and client builds sequentially.
+- Build the Linux amd64 server binaries once and reuse that exact output for ZIP and all three Debian packages. The ZIP contains `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`. Run server and client builds sequentially.
 - Keep `hbbs`, `hbbr`, `rustdesk-utils`, package/service names, and the v2.0.0 admin API contract. No Windows, ARM, or 32-bit release assets and no `RustDeskDeploy.exe` wrapper are approved for this patch.
 - The existing local Docker deployment/image remains **`rustdeskadmin-server:2.0.0`**; do not rebuild/redeploy it or claim a v2.0.1 image upgrade. New GHCR image publication is not part of this package release.
-- Publish as Latest only after verifying source/artifact identity. Verify all four new downloads **before** removing the 17 old v2.0.0 assets, including ARM/32-bit/Windows packages; retain its tag and source archives. The client independently prepares v2.2.1 and a three-asset cleanup of v2.2.0.
-- After publication/download verification, finalize README, deployment/development guides, changelog, this handoff, and shared local memory. Until then keep the PREPARING state.
+- Publish as Latest only after verifying build-commit/artifact provenance and any documentation-only tag delta. Verify all four new downloads **before** removing the 17 old v2.0.0 assets, including ARM/32-bit/Windows packages; retain its tag and source archives. The paired client release is v2.2.1 with a separate three-asset cleanup of v2.2.0.
+- Old-asset retirement is pending. Record publication, download verification, and actual retirement results only when completed.
 
 ### Authentication model
 
