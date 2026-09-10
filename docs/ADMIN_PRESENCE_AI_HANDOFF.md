@@ -31,15 +31,17 @@ Keep `upstream` fetch-only (or disable its push URL). Push only to the fork.
 
 ## 3. Release v2.0.1
 
-Release **v2.0.1** packages the **2.0.1** branding/version patch. Consult the [release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published asset availability. The designated Linux amd64 musl build commit is `961d0886ee48ffc884d0186b25574070daca7fcb`; the final tag may add documentation-only follow-up changes while retaining identical runtime/build/package source.
+Release **v2.0.1** was published as **Latest** on **2026-09-10 UTC** (release ID `386695124`, neither draft nor prerelease). The [release notes](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) provide downloads and SHA-256 checksums. Tag commit `b19843d296d7b5697c3f593e9f9c76a843338767` adds **documentation only** to binary build commit `961d0886ee48ffc884d0186b25574070daca7fcb`; the comparison verified no runtime/build/package-source changes. Later documentation commits must not move the release tag.
 
 - Display product: **RustDeskAdmin Server - RustDesk Fork**; retain upstream copyright and add Henrique Rezende.
-- Expected assets: `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`.
-- Build the Linux amd64 server binaries once and reuse that exact output for ZIP and all three Debian packages. The ZIP contains `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`. Run server and client builds sequentially.
+- Exactly four published assets: `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`.
+- The single static-musl build completed in 4m31s with `CARGO_BUILD_JOBS=2 cargo build --release --locked --target x86_64-unknown-linux-musl`. All three binaries are x86-64 static PIE and already stripped. `hbbs` and `hbbr` report `2.0.1`; `rustdesk-utils` does **not** support `--version`.
+- The ZIP contains exactly `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`. Ubuntu 22.04 packaging used `DEB_BUILD_OPTIONS=nostrip debuild -i -us -uc -b -aamd64` to prevent debhelper rewriting stripped binaries. All three DEB binaries are byte-identical to the build and ZIP. Debian `2.0.1`/`amd64` metadata, maintainer, homepage, copyright, and services were checked. Keep this recipe and run server/client builds sequentially, not once per format.
 - Keep `hbbs`, `hbbr`, `rustdesk-utils`, package/service names, and the v2.0.0 admin API contract. No Windows, ARM, or 32-bit release assets and no `RustDeskDeploy.exe` wrapper are approved for this patch.
-- The existing local Docker deployment/image remains **`rustdeskadmin-server:2.0.0`**; do not rebuild/redeploy it or claim a v2.0.1 image upgrade. New GHCR image publication is not part of this package release.
-- Publish as Latest only after verifying build-commit/artifact provenance and any documentation-only tag delta. Verify all four new downloads **before** removing the 17 old v2.0.0 assets, including ARM/32-bit/Windows packages; retain its tag and source archives. The paired client release is v2.2.1 with a separate three-asset cleanup of v2.2.0.
-- Old-asset retirement is pending. Record publication, download verification, and actual retirement results only when completed.
+- This package release made no Docker deployment changes and published no new GHCR images. Do not infer an image upgrade from the package version.
+- All four packages were downloaded at draft stage and again via public HTTPS after publication; every hash matched the local original and GitHub SHA-256 digest. Validation covered runtime version and package/static/hash checks, not installation smoke tests.
+- Retirement completed after verification: all 17 old server `v2.0.0` assets (including ARM/32-bit/Windows packages) and all three paired client `v2.2.0` assets were removed after verified backups. Old release pages, automatic source archives, and tags remain; descriptions link to the replacements. Server old tag object `c84ee56170f65c5325ee687195e06497cf2dc1cb` is unchanged. The paired client `v2.2.1` is also published as Latest with exactly three assets.
+- All temporarily paused GitHub workflow states were restored to their originals. No unwanted CI rebuilds, server images, or ARM/32-bit/Windows server packages were triggered.
 
 ### Authentication model
 

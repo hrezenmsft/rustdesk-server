@@ -8,9 +8,9 @@ The admin pane is a discovery surface only. Selecting a device still uses RustDe
 
 ## Release v2.0.1
 
-Release **v2.0.1** uses source/package version **2.0.1**. Check the [release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published assets. The designated Linux amd64 musl build commit is `961d0886ee48ffc884d0186b25574070daca7fcb`. The final tag may include documentation-only follow-up commits; runtime/build/package source must remain identical to the build commit. Product name: **RustDeskAdmin Server - RustDesk Fork**. Retain upstream copyright and add Henrique Rezende's attribution, preserving internal `hbbs`, `hbbr`, `rustdesk-utils`, package, and service names.
+Release **v2.0.1** was published as **Latest** on **2026-09-10 UTC**, neither draft nor prerelease, using source/package version **2.0.1**. See the [release notes](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for downloads and SHA-256 checksums. Linux amd64 musl build commit: `961d0886ee48ffc884d0186b25574070daca7fcb`. Tag commit `b19843d296d7b5697c3f593e9f9c76a843338767` adds documentation only; runtime/build/package source was verified unchanged from the build commit. Product name: **RustDeskAdmin Server - RustDesk Fork**. Retain upstream copyright and add Henrique Rezende's attribution, preserving internal `hbbs`, `hbbr`, `rustdesk-utils`, package, and service names.
 
-Build the Linux amd64 server binaries once, then reuse that same output for:
+The Linux amd64 server binaries were built once and the same output reused for exactly four published packages:
 
 - `rustdeskadmin-server-2.0.1-linux-amd64.zip`
 - `rustdesk-server-hbbs_2.0.1_amd64.deb`
@@ -19,9 +19,11 @@ Build the Linux amd64 server binaries once, then reuse that same output for:
 
 Run client and server application builds sequentially, not concurrently; do not rebuild per package format. The ZIP contains `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`. Preserve attribution/release notices, verify packaged binary versions and Debian metadata, and ensure no private runtime state enters a package. Do not include Windows/ARM/32-bit assets or `RustDeskDeploy.exe`.
 
-The release uses the static `x86_64-unknown-linux-musl` build. Package its already-stripped binaries with `DEB_BUILD_OPTIONS=nostrip debuild -i -us -uc -b -aamd64` in the Debian staging tree. This prevents debhelper from rewriting them and preserves byte-for-byte identity between the ZIP, DEBs, and build output.
+The static-musl build completed in **4m31s** using `CARGO_BUILD_JOBS=2 cargo build --release --locked --target x86_64-unknown-linux-musl`. All three binaries were verified as already-stripped x86-64 static PIE. `hbbs` and `hbbr` report `2.0.1`; `rustdesk-utils` does **not** support `--version`.
 
-The local Docker image/deployment stays **`rustdeskadmin-server:2.0.0`**, unchanged; these packages do not imply new GHCR images. Retirement of the 17 old v2.0.0 release assets (including ARM/32-bit/Windows outputs) is pending: publish the verified patch as Latest and verify all four downloads before deleting them. Preserve old tags/source archives and record actual completion only after verification.
+Packaging completed with Ubuntu 22.04 `debuild`. For reproduction, package the already-stripped binaries with `DEB_BUILD_OPTIONS=nostrip debuild -i -us -uc -b -aamd64` in the Debian staging tree. This prevents debhelper from rewriting them. All three DEB binaries were verified byte-for-byte identical to the ZIP and build output; Debian `2.0.1`/`amd64` metadata, maintainer, homepage, copyright, and services were checked.
+
+All four draft-stage and public HTTPS downloads matched the local originals and GitHub SHA-256 digests. After verification and backup, all 17 old v2.0.0 release assets (including ARM/32-bit/Windows outputs) were retired; the release page, unchanged tag, and automatic source archives remain, with replacement links. Temporarily paused workflow states were restored without unwanted rebuilds or image publication. This package release made no deployment changes and published no new GHCR images. Validation covered runtime version and package/static/hash checks, not installation smoke tests.
 
 ## Current server contract (introduced in v2.0.0; unchanged for v2.0.1)
 

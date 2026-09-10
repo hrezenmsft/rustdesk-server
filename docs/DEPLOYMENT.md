@@ -10,13 +10,15 @@ All examples use placeholders such as `<your-domain-or-ip>`, `<label>`, `<finger
 
 ## Release v2.0.1
 
-Release **v2.0.1** packages server version **2.0.1**, with product name **RustDeskAdmin Server - RustDesk Fork**, upstream copyright retained, and Henrique Rezende's attribution added. Check the [v2.0.1 release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published asset availability before using the package commands below. The designated build commit is `961d0886ee48ffc884d0186b25574070daca7fcb`; the final tag may include documentation-only changes without altering runtime/build/package source.
+Release **v2.0.1** was published as **Latest** on **2026-09-10 UTC** (neither draft nor prerelease), with product name **RustDeskAdmin Server - RustDesk Fork**, upstream copyright retained, and Henrique Rezende's attribution added. The [release notes](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) provide downloads and SHA-256 checksums. Tag commit `b19843d296d7b5697c3f593e9f9c76a843338767` adds documentation only to binary build commit `961d0886ee48ffc884d0186b25574070daca7fcb`; runtime/build/package source was verified unchanged.
 
 The asset set is `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. Only Linux amd64 is in this patch release; no Windows, ARM, 32-bit, or `RustDeskDeploy.exe` wrapper assets are included. Internal executable/package/service names and enrollment behavior stay compatible.
 
-The Docker examples below describe existing-image deployment, **not** a v2.0.1 image release. The current local image/deployment stays **`rustdeskadmin-server:2.0.0`** unchanged. Do not infer an image upgrade from the package version.
+The Docker examples below describe existing-image deployment, **not** a v2.0.1 image release. This package release made no deployment changes and published no new GHCR images. Do not infer an image upgrade from the package version.
 
-Retirement of the 17 old v2.0.0 assets, including ARM/32-bit/Windows assets, is pending publication as Latest and verification of all four new downloads. Keep the old tag/source archives.
+All four draft-stage and public HTTPS downloads matched the originals and GitHub SHA-256 digests. All three stripped x86-64 static-PIE binaries are byte-identical across build, ZIP, and DEBs; packaging used `DEB_BUILD_OPTIONS=nostrip` to prevent debhelper rewriting them (see the [build/packaging guide](ADMIN_PRESENCE_DEVELOPMENT.md#release-v201)). `hbbs` and `hbbr` report `2.0.1`; `rustdesk-utils` does not support `--version`. Package metadata and services were checked; installation smoke tests were not performed.
+
+All 17 old v2.0.0 assets, including ARM/32-bit/Windows assets, were retired after verification and backup. Its release page, unchanged tag, and automatic source archives remain, with replacement links in the description.
 
 > The admin API is **fail-closed**. `hbbs` only listens on `ADMIN_API_PORT` after it starts with at least one enrolled admin key. If you enroll the first key after `hbbs` already started empty, restart `hbbs` once. After that, later enroll/revoke operations hot-reload live with no restart.
 
@@ -206,7 +208,7 @@ Choose **one** of the following.
 
 #### Option A: download a release package
 
-The following commands target **v2.0.1** and require its published ZIP asset. Confirm availability on the [release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) and verify the download against the release's checksum before installation.
+The following commands download the published **v2.0.1** ZIP asset. Verify your download against the SHA-256 checksum in the [release notes](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) before installation.
 
 ```bash
 TAG=v2.0.1

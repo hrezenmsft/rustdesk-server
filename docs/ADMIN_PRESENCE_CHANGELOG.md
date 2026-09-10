@@ -8,11 +8,13 @@ Entries are grouped by release date, newest first.
 
 ### Release metadata and packaging
 
-- Source and package version: **2.0.1**. Designated build commit: `961d0886ee48ffc884d0186b25574070daca7fcb`; the final `v2.0.1` tag may add documentation-only changes without altering runtime/build/package source.
+- Source and package version: **2.0.1**. Binary build commit: `961d0886ee48ffc884d0186b25574070daca7fcb`; tag commit `b19843d296d7b5697c3f593e9f9c76a843338767` adds documentation only, with no runtime/build/package-source changes.
 - Use product name **RustDeskAdmin Server - RustDesk Fork**, retaining upstream copyright and adding Henrique Rezende's fork attribution; preserve `hbbs`, `hbbr`, `rustdesk-utils`, and existing package/service names.
-- Build Linux amd64 binaries once and reuse the output for `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. ZIP contents: `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`. No Windows/ARM/32-bit assets or `RustDeskDeploy.exe` wrapper are part of this patch.
-- Consult the [v2.0.1 release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for published downloads. Retirement of the 17 old v2.0.0 binary/package assets, including ARM/32-bit/Windows outputs, is pending publication and verification of the new downloads; retain the old tag and source archives.
-- The local Docker image/deployment remains **`rustdeskadmin-server:2.0.0`** unchanged. This patch does not claim new GHCR images or a change to the existing admin API/connection behavior.
+- Built Linux amd64 static-musl binaries once in 4m31s and reused the output for `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. ZIP contents: exactly `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`. No Windows/ARM/32-bit assets or `RustDeskDeploy.exe` wrapper are part of this patch.
+- Verified all three binaries are stripped x86-64 static PIE. `hbbs` and `hbbr` report `2.0.1`; `rustdesk-utils` does not support `--version`. Ubuntu 22.04 packaging with `DEB_BUILD_OPTIONS=nostrip` preserved byte identity across build, ZIP, and all three DEBs; Debian version/architecture, maintainer, homepage, copyright, and services were checked. No installation smoke tests were performed.
+- Published **v2.0.1 as Latest** on 2026-09-10 UTC, neither draft nor prerelease, with exactly four packages. See the [release notes](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1) for downloads and SHA-256 checksums. Draft-stage and public HTTPS downloads matched the originals and GitHub digests.
+- Retired all 17 old v2.0.0 binary/package assets after verification and backup; its release page, unchanged tag, and automatic source archives remain, with replacement links in the description. The paired client's three-asset retirement also completed (20 old assets total).
+- Restored temporarily paused workflow states without unwanted rebuilds or image publication. This patch made no deployment changes and did not change the existing admin API/connection behavior.
 
 ## v2.0.0 (2026-09-08)
 
