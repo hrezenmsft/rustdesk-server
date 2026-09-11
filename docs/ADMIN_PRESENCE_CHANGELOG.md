@@ -4,6 +4,16 @@ All notable changes to this custom administrator-presence server extension are r
 
 Entries are grouped by release date, newest first.
 
+## v2.0.1 Docker follow-up (2026-09-11 UTC)
+
+- Published the classic **Linux amd64-only** image `ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1`. Tags `v2.0.1`, `v2.0.1-amd64`, `latest`, `latest-amd64`, `v2`, and `v2-amd64` all point to single OCI manifest `sha256:5020adfdfb60de969a2e2a62712f72ddf179906cde90f9a71816cdb9db06c5c1` (package version `1235297545`).
+- Reused the existing Linux ZIP's three byte-identical executables without rebuilding Rust. Docker packaging source/OCI revision is `8cbc59c8950e24645cdbd81cc5499f2105907330`; binary build commit `961d0886ee48ffc884d0186b25574070daca7fcb` and Git release tag commit `b19843d296d7b5697c3f593e9f9c76a843338767` remain unchanged. Pulled-image checks in isolated, network-disabled, read-only containers confirmed `hbbs`/`hbbr` version `2.0.1` and binary identity.
+- Added product/author/version/license/repository/revision labels and included `RELEASE-NOTICE.txt` and `LICENSE` at `/usr/share/doc/rustdeskadmin-server/`, preserving upstream attribution. Classic `FROM scratch`, binaries in `/usr/bin`, and `HOME`/`WORKDIR /root` remain unchanged.
+- Pinned both services in `docker-compose.example.yml` to `:v2.0.1` and documented amd64-only support; updated generic Docker/Compose documentation accordingly. No changes to the two-container topology or admin API.
+- Restricted future **classic** CI to amd64, added notice/license build context and `VERSION`/`VCS_REF` label arguments, and corrected `docker-manifest-classic` to depend on `docker-classic` instead of `docker`, with amd64-only aliases. S6, binary, and DEB release matrices are unchanged.
+- Backed up all 16 original classic GHCR versions with digest-verified OCI manifests/configs/layers, then retired 8 ARM images and 4 obsolete multi-platform indexes. Five versions remain: four original amd64 images plus 2.0.1. Retargeted historical `v2.0.0`, `v1.1.4`, `v1`, and `v1.1.3` tags to their **original amd64 images**, not 2.0.1 binaries; preserved `v1.1.2-amd64`. Retired ARM references and old multi-platform index digests no longer work; restoring old manifest digests requires the backup. Git release tags remain unchanged.
+- Left the **`rustdeskadmin-server-s6` GHCR package** and the running local **`rustdeskadmin-server:2.0.0`** deployment untouched: no local restart, recreation, upgrade, or configuration change. The initial four server/three client release assets and completed old-asset retirement remain unchanged.
+
 ## v2.0.1 (2026-09-10)
 
 ### Release metadata and packaging

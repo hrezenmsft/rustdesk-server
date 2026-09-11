@@ -14,7 +14,11 @@ Release **v2.0.1** was published as **Latest** on **2026-09-10 UTC** (neither dr
 
 The asset set is `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. Only Linux amd64 is in this patch release; no Windows, ARM, 32-bit, or `RustDeskDeploy.exe` wrapper assets are included. Internal executable/package/service names and enrollment behavior stay compatible.
 
-The Docker examples below describe existing-image deployment, **not** a v2.0.1 image release. This package release made no deployment changes and published no new GHCR images. Do not infer an image upgrade from the package version.
+The initial package release published no new GHCR images. The **2026-09-11 UTC Docker follow-up** published `ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1` for **Linux amd64 only**, reusing the same release binaries without a Rust rebuild. The Docker examples below and both services in `docker-compose.example.yml` now pin this image. Publishing the image and updating the example did **not** upgrade, restart, or recreate the running local 2.0.0 server.
+
+For immutable image selection, use `ghcr.io/hrezenmsft/rustdeskadmin-server@sha256:5020adfdfb60de969a2e2a62712f72ddf179906cde90f9a71816cdb9db06c5c1`. Tags `v2.0.1`, `v2.0.1-amd64`, `latest`, `latest-amd64`, `v2`, and `v2-amd64` currently resolve to that single Linux amd64 OCI manifest. See the [handoff](ADMIN_PRESENCE_AI_HANDOFF.md#docker-follow-up-2026-09-11-utc) for exact source provenance and validation.
+
+**Classic image compatibility:** historical ARM images and obsolete multi-platform indexes were retired after a digest-verified backup. Historical tags `v2.0.0`, `v1.1.4`, `v1`, and `v1.1.3` now select their original amd64 images, not 2.0.1 binaries; `v1.1.2-amd64` remains. Retired ARM tags/digests and old multi-platform index digests are no longer usable; restoration by an old manifest digest requires the backup. Git release tags remain unchanged. This platform/retirement scope applies only to `rustdeskadmin-server`, **not** `rustdeskadmin-server-s6`, whose package was untouched.
 
 All four draft-stage and public HTTPS downloads matched the originals and GitHub SHA-256 digests. All three stripped x86-64 static-PIE binaries are byte-identical across build, ZIP, and DEBs; packaging used `DEB_BUILD_OPTIONS=nostrip` to prevent debhelper rewriting them (see the [build/packaging guide](ADMIN_PRESENCE_DEVELOPMENT.md#release-v201)). `hbbs` and `hbbr` report `2.0.1`; `rustdesk-utils` does not support `--version`. Package metadata and services were checked; installation smoke tests were not performed.
 
@@ -364,7 +368,7 @@ No restart is needed if the API was already running.
 
 ## 2. Plain docker run
 
-These examples use the published classic image and a named Docker volume mounted at `/root`, which is the image's working directory.
+These examples require Linux amd64 and use the pinned classic v2.0.1 image and a named Docker volume mounted at `/root`, which remains the image's `HOME` and working directory. The classic image still uses `FROM scratch`, with binaries in `/usr/bin`; license and release notices are in `/usr/share/doc/rustdeskadmin-server/`.
 
 ### Create persistent storage
 
@@ -387,7 +391,7 @@ docker run -d --name rustdeskadmin-hbbs \
   -p 21116:21116/udp \
   -p 21118:21118 \
   -v rustdesk-data:/root \
-  ghcr.io/hrezenmsft/rustdeskadmin-server:latest \
+  ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1 \
   hbbs -r <your-domain-or-ip>:21117
 
 docker run -d --name rustdeskadmin-hbbr \
@@ -395,7 +399,7 @@ docker run -d --name rustdeskadmin-hbbr \
   -p 21117:21117 \
   -p 21119:21119 \
   -v rustdesk-data:/root \
-  ghcr.io/hrezenmsft/rustdeskadmin-server:latest \
+  ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1 \
   hbbr
 ```
 
@@ -435,7 +439,7 @@ docker exec rustdeskadmin-hbbs rustdesk-utils listadminkeys
 
 ## 3. Docker Compose
 
-A ready-to-copy example is kept at the repo root as **`docker-compose.example.yml`**. It uses a named volume, the published classic image, and one container per binary.
+A ready-to-copy example is kept at the repo root as **`docker-compose.example.yml`**. It uses a named volume, the pinned Linux amd64-only classic v2.0.1 image, and one container per binary. Do not substitute the S6 image in this two-container topology: its supervisor starts both binaries in a single container.
 
 ### Example `docker-compose.yml`
 
@@ -444,7 +448,7 @@ A ready-to-copy example is kept at the repo root as **`docker-compose.example.ym
 ```yaml
 services:
   hbbs:
-    image: ghcr.io/hrezenmsft/rustdeskadmin-server:latest
+    image: ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1
     container_name: rustdeskadmin-hbbs
     command: hbbs -r <your-domain-or-ip>:21117
     environment:
@@ -461,7 +465,7 @@ services:
     restart: unless-stopped
 
   hbbr:
-    image: ghcr.io/hrezenmsft/rustdeskadmin-server:latest
+    image: ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1
     container_name: rustdeskadmin-hbbr
     command: hbbr
     ports:

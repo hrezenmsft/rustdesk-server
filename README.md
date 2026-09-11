@@ -10,7 +10,7 @@ Release **v2.0.1** was published as **Latest** on **2026-09-10 UTC** (not a draf
 - Linux amd64 asset set: `rustdeskadmin-server-2.0.1-linux-amd64.zip`, `rustdesk-server-hbbs_2.0.1_amd64.deb`, `rustdesk-server-hbbr_2.0.1_amd64.deb`, and `rustdesk-server-utils_2.0.1_amd64.deb`. The ZIP contains `hbbs`, `hbbr`, `rustdesk-utils`, and `RELEASE-NOTICE.txt`.
 - Keep `hbbs`, `hbbr`, `rustdesk-utils`, package/service names, and the existing admin API contract for compatibility. No Windows/ARM/32-bit assets or `RustDeskDeploy.exe` wrapper are part of this patch release.
 - The static-musl ZIP and Debian packages reuse the same three byte-identical binaries. All four draft-stage and public HTTPS downloads matched the originals and GitHub SHA-256 digests.
-- This package release made **no deployment changes** and published no new GHCR images.
+- Docker follow-up (**2026-09-11 UTC**): **`ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1`** is published for **Linux amd64 only**, reusing the release binaries without a Rust rebuild. Compose now pins this image; the running local 2.0.0 deployment and the S6 package were not changed. See the [Docker handoff](docs/ADMIN_PRESENCE_AI_HANDOFF.md#docker-follow-up-2026-09-11-utc) for provenance and historical ARM image retirement.
 - All 17 old **v2.0.0** binary/package assets, including ARM, 32-bit, and Windows assets, were retired after verification and backup. Its release page, unchanged tag, and automatic source archives remain, with replacement links in its description.
 
 ### What this fork adds
@@ -35,7 +35,7 @@ Release **v2.0.1** was published as **Latest** on **2026-09-10 UTC** (not a draf
 
 ### Quick start
 
-**Recommended: deploy from a prebuilt release package — no local build required.** Select a published Linux amd64 asset from the [v2.0.1 release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1), following the [deployment guide](docs/DEPLOYMENT.md). Docker Compose remains an alternative using previously published GHCR images, not a v2.0.1 image upgrade. Existing-image quick start:
+**Recommended: deploy from a prebuilt release package — no local build required.** Select a published Linux amd64 asset from the [v2.0.1 release page](https://github.com/hrezenmsft/rustdeskadmin-server/releases/tag/v2.0.1), following the [deployment guide](docs/DEPLOYMENT.md). Alternatively, use Docker Compose with the published **Linux amd64-only** image `ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1`. New-deployment quick start (not an instruction to upgrade the existing local 2.0.0 stack):
 ```bash
 curl -O https://raw.githubusercontent.com/hrezenmsft/rustdeskadmin-server/master/docker-compose.example.yml
 mv docker-compose.example.yml docker-compose.yml
