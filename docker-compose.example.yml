@@ -1,4 +1,5 @@
 # Example docker-compose.yml for rustdeskadmin-server.
+# The classic v2.0.1 image supports Linux amd64 only.
 #
 # Copy this file to docker-compose.yml, replace the placeholders, then run:
 #   docker compose pull
@@ -26,7 +27,7 @@
 
 services:
   hbbs:
-    image: ghcr.io/hrezenmsft/rustdeskadmin-server:latest
+    image: ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1
     container_name: rustdeskadmin-hbbs
     command: hbbs -r <your-domain-or-ip>:21117
     environment:
@@ -43,7 +44,7 @@ services:
     restart: unless-stopped
 
   hbbr:
-    image: ghcr.io/hrezenmsft/rustdeskadmin-server:latest
+    image: ghcr.io/hrezenmsft/rustdeskadmin-server:v2.0.1
     container_name: rustdeskadmin-hbbr
     command: hbbr
     ports:

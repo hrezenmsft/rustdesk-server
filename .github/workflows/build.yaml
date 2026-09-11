@@ -379,8 +379,6 @@ jobs:
       matrix:
         job:
           - { name: "amd64",   docker_platform: "linux/amd64" }
-          - { name: "arm64v8", docker_platform: "linux/arm64" }
-          - { name: "armv7",   docker_platform: "linux/arm/v7" }
 
     steps:
 
@@ -398,8 +396,8 @@ jobs:
       - name: Make binaries executable
         run: chmod -v a+x docker-classic/*
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+      - name: Include license and fork attribution
+        run: cp RELEASE-NOTICE.txt LICENSE docker-classic/
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -437,6 +435,9 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: "./docker-classic"
+          build-args: |
+            VERSION=${{ env.GIT_TAG }}
+            VCS_REF=${{ github.sha }}
           platforms: ${{ matrix.job.docker_platform }}
           push: true
           provenance: false
@@ -446,11 +447,11 @@ jobs:
             ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.MAJOR_TAG }}-${{ matrix.job.name }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # docker build and push of multiarch images
+  # Publish classic aliases from the amd64 image only.
   docker-manifest-classic:
 
-    name: Docker manifest
-    needs: docker
+    name: Docker manifest (classic amd64)
+    needs: docker-classic
     runs-on: ubuntu-22.04
 
     steps:
@@ -487,7 +488,7 @@ jobs:
         uses: Noelware/docker-manifest-action@0.4.3
         with:
           base-image: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}
-          extra-images: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}-amd64,${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}-arm64v8,${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}-armv7
+          extra-images: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.GIT_TAG }}-amd64
           push: true
 
       # manifest for :1 tag (major release)
@@ -495,7 +496,7 @@ jobs:
         uses: Noelware/docker-manifest-action@0.4.3
         with:
           base-image: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.MAJOR_TAG }}
-          extra-images: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.MAJOR_TAG }}-amd64,${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.MAJOR_TAG }}-arm64v8,${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.MAJOR_TAG }}-armv7
+          extra-images: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.MAJOR_TAG }}-amd64
           push: true
 
       # manifest for :latest tag
@@ -503,7 +504,7 @@ jobs:
         uses: Noelware/docker-manifest-action@0.4.3
         with:
           base-image: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.LATEST_TAG }}
-          extra-images: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.LATEST_TAG }}-amd64,${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.LATEST_TAG }}-arm64v8,${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.LATEST_TAG }}-armv7
+          extra-images: ${{ env.GHCR_IMAGE_CLASSIC }}:${{ env.LATEST_TAG }}-amd64
           push: true
 
 
